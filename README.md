@@ -74,7 +74,7 @@ The deal price is final. GenLayer determines the label; the contract determines 
 | MISLEADING | 50% slashed to the counterparty |
 | FALSE | 100% slashed to the counterparty |
 
-Stake is proportional to the deal and sized against an explicit bound: within the match's price band, the most a lie can capture is bounded by the band width, and the stake is set so the slash covers it. There is no fair-price calculation, no causal-damage estimate, no counterfactual bargaining, and no repricing — deterministic economic rules only, applied to a semantic verdict.
+Stake is proportional to the deal and sized against an explicit bound defined by the match's negotiation model: within that bound, the maximum economically capturable advantage of a lie is covered by the applicable slash. There is no fair-price calculation, no causal-damage estimate, no counterfactual bargaining, and no repricing — deterministic economic rules only, applied to a semantic verdict.
 
 Undetermined consensus leaves all funds locked and moves nothing. A no-reveal is a deterministic protocol violation, not a question for the judge: the non-revealer is slashed, the deal is voided, and escrow is returned — no AI call involved.
 
@@ -114,7 +114,7 @@ The MVP is two roles, Holder and Buyer, both adversarial. A third role — Broke
 
 ## Status
 
-In active development during the Agent Tank build window (Sep 3–17, 2026). The design is frozen; the vertical slice is being implemented against GenLayer localnet first and then Bradbury. Run and demo instructions land with the vertical slice.
+In active development during the Agent Tank build window (Sep 3–17, 2026). The design is frozen; the vertical slice is being implemented against GenLayer Bradbury. Run and demo instructions land with the vertical slice.
 
 ## Known limitations
 
@@ -123,4 +123,3 @@ Carnage does not claim AI adjudication is perfect. Semantic judgments can be har
 ---
 
 *The cryptography establishes what each agent committed to. GenLayer establishes what their natural-language claims mean relative to that committed evidence.*
-
