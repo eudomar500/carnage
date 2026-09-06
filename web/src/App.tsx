@@ -25,7 +25,7 @@ const RIGHT_RAIL = ["REVEAL", "VERIFY", "GENLAYER", "CONSENSUS", "FINALITY", "SE
 
 export default function App() {
   const [matchId, setMatchId] = useState(matchIdFromUrl);
-  const { view, notFound, error, loading, tick, refresh } = useMatch(matchId);
+  const { view, notFound, error, degraded, loading, tick, refresh } = useMatch(matchId);
   const [wallet, setWallet] = useState<`0x${string}` | null>(null);
   const [connecting, setConnecting] = useState(false);
 
@@ -200,7 +200,7 @@ export default function App() {
         </div>
 
         <div className="vs" aria-hidden="true">
-          <span className="vs-chevrons">››</span> VS
+          <span className="vs-chevrons">&gt;&gt;</span> VS
         </div>
 
         <div className="card-slot card-slot--right">
@@ -227,6 +227,13 @@ export default function App() {
           <StepDiagram active={phase.stepIndex} />
         </div>
       </main>
+
+      {degraded && !preview ? (
+        <p className="degraded">
+          READS ARE FAILING ({degraded}). THE STATE BELOW IS THE LAST GOOD READ
+          AND MAY BE BEHIND. RETRYING ON A LONGER INTERVAL.
+        </p>
+      ) : null}
 
       <MatchConsole
         matchId={BigInt(matchId)}

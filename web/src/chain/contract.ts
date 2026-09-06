@@ -1,6 +1,6 @@
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
 import { CARNAGE_ADDRESS, readClient, writeClient } from "./client";
-import { decodeGenvmError } from "./errors";
+import { decodeGenvmError, tagStage } from "./errors";
 
 /** The five-label rubric the jury returns. */
 export type Label = "TRUE" | "FALSE" | "MISLEADING" | "AMBIGUOUS" | "UNSUPPORTED" | "";
@@ -201,19 +201,32 @@ export async function sendClaim(
   onStage?: (stage: ClaimStage) => void,
 ): Promise<{ hash: `0x${string}`; status: TransactionStatus }> {
   const client = writeClient(wallet);
-  const hash = await client.writeContract({
-    address: CARNAGE_ADDRESS,
-    functionName: "claim",
-    args: [Number(matchId)],
-    value: 0n,
-  });
+  let hash: Awaited<ReturnType<typeof client.writeContract>>;
+  try {
+    hash = await client.writeContract({
+      address: CARNAGE_ADDRESS,
+      functionName: "claim",
+      args: [Number(matchId)],
+      value: 0n,
+    });
+  } catch (err) {
+    throw tagStage(err, "submit");
+  }
 
-  const receipt = await client.waitForTransactionReceipt({
-    hash,
-    status: TransactionStatus.ACCEPTED,
-    interval: 4000,
-    retries: 60,
-  });
+  // Tagged the same way as actions.send: once the claim is broadcast, a failure
+  // to see the receipt is not a failed claim, and the button must not come back
+  // until contract state says the balance was actually zeroed.
+  let receipt: Awaited<ReturnType<typeof client.waitForTransactionReceipt>>;
+  try {
+    receipt = await client.waitForTransactionReceipt({
+      hash,
+      status: TransactionStatus.ACCEPTED,
+      interval: 4000,
+      retries: 60,
+    });
+  } catch (err) {
+    throw tagStage(err, "confirm");
+  }
   onStage?.("accepted");
 
   // Finalization is the slow part; follow it without blocking the caller.

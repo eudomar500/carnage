@@ -19,7 +19,11 @@ export type MatchConsoleProps = {
   wallet: `0x${string}` | null;
   gate: ClaimGate | null;
   onCreated: (id: bigint) => void;
-  onActed: () => void;
+  /**
+   * Re-reads the match and hands back what it read. Every panel confirms its
+   * own state change through this, so it has to return the state, not void.
+   */
+  onActed: () => Promise<MatchState | null>;
 };
 
 function Waiting({ actions, match }: { actions: PendingAction[]; match: MatchState }) {
@@ -53,20 +57,18 @@ function Panel({
   match: MatchState;
   role: Role;
   gate: ClaimGate | null;
-  onActed: () => void;
+  onActed: () => Promise<MatchState | null>;
 }) {
-  const p = { wallet, match, role, onDone: onActed };
+  const p = { wallet, match, role, refresh: onActed };
   switch (id) {
     case "commit":         return <CommitPanel {...p} />;
     case "fund":           return <FundPanel {...p} />;
     case "anchor_claim":   return <AnchorClaimPanel {...p} />;
     case "propose_price":  return <ProposePricePanel {...p} />;
     case "reveal":         return <RevealPanel {...p} />;
-    case "adjudicate":     return <AdjudicatePanel wallet={wallet} match={match} onDone={onActed} />;
+    case "adjudicate":     return <AdjudicatePanel {...p} />;
     case "claim":
-      return gate ? (
-        <ClaimActionPanel wallet={wallet} match={match} gate={gate} onDone={onActed} />
-      ) : null;
+      return gate ? <ClaimActionPanel {...p} gate={gate} /> : null;
     default:               return null;
   }
 }

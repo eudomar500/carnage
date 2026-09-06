@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { parseUnits } from "viem";
 import { createMatch } from "../chain/actions";
+import { confirmationFor } from "../chain/confirm";
 import { useAction } from "../hooks/useAction";
 import ActionButton from "./ActionButton";
 import { TOKEN_DECIMALS } from "../chain/client";
@@ -24,7 +25,10 @@ export default function CreatePanel({ wallet, onCreated }: CreatePanelProps) {
   const [stake, setStake] = useState("0.01");
   const [revealAt, setRevealAt] = useState(isoInDays(7));
   const [inconclusiveAt, setInconclusiveAt] = useState(isoInDays(14));
-  const a = useAction();
+  // create_match has no prior match to watch, so the action layer proves its
+  // own outcome by scanning for the minted id and there is no postcondition
+  // for the watcher to poll.
+  const a = useAction({ matchId: 0, confirm: confirmationFor("create_match", "holder") });
 
   const useMine = (set: (v: string) => void) => () => wallet && set(wallet);
 
@@ -42,7 +46,7 @@ export default function CreatePanel({ wallet, onCreated }: CreatePanelProps) {
         inconclusiveDeadline: inconclusiveAt.trim(),
       });
       onCreated(res.matchId);
-      return `match #${res.matchId} created | ${res.status}`;
+      return `match #${res.matchId} created`;
     });
 
   return (

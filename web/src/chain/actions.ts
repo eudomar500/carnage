@@ -1,11 +1,22 @@
 import { TransactionStatus } from "genlayer-js/types";
 import type { CalldataEncodable } from "genlayer-js/types";
+import type { Stage } from "./errors";
 import { CARNAGE_ADDRESS, readClient, simulationClient, toCalldataAddress, writeClient } from "./client";
 import { getMatch } from "./contract";
 import type { Role } from "./roles";
-import { decodeGenvmError } from "./errors";
+import { decodeGenvmError, tagStage } from "./errors";
 
 export { decodeGenvmError };
+
+/**
+ * How long `send` waits for ACCEPTED, as interval x retries.
+ *
+ * Exported because the recovery layer has to know it: an attempt recorded
+ * before a page reload may still be inside this budget, and offering a retry
+ * while the original transaction is still being accepted is how a match gets
+ * the same call twice.
+ */
+export const ACCEPT_WAIT_MS = 4000 * 90;
 
 export type SendResult = {
   hash: `0x${string}`;
@@ -34,10 +45,32 @@ export async function preflight(account: `0x${string}`, spec: CallSpec): Promise
       args: spec.args,
     });
   } catch (err) {
-    throw new Error(decodeGenvmError(err));
+    throw rethrow(err, "preflight");
   }
 }
 
+/**
+ * Rewraps a provider error into one readable line without losing the two
+ * things the recovery layer routes on: the wallet's own error code, and how
+ * far the call got before it threw.
+ */
+function rethrow(err: unknown, stage: Stage): Error {
+  const wrapped = new Error(decodeGenvmError(err));
+  (wrapped as any).code = (err as any)?.code;
+  (wrapped as any).cause = err;
+  return tagStage(wrapped, stage);
+}
+
+/**
+ * Submits and waits for acceptance.
+ *
+ * The two failure points are tagged apart deliberately. A `writeContract`
+ * throw means nothing reached the network and the step is safe to re-enable.
+ * A throw while waiting for the receipt means the transaction IS on the
+ * network and its outcome is simply unknown, so the caller must confirm
+ * against contract state before offering a retry. Collapsing the two is how a
+ * button gets re-enabled under a transaction that is still in flight.
+ */
 export async function send(account: `0x${string}`, spec: CallSpec): Promise<SendResult> {
   const client = writeClient(account);
   let hash: Awaited<ReturnType<typeof client.writeContract>>;
@@ -49,19 +82,20 @@ export async function send(account: `0x${string}`, spec: CallSpec): Promise<Send
       value: spec.value ?? 0n,
     });
   } catch (err) {
-    // Preserve the wallet's own rejection code so the UI can say "cancelled".
-    const wrapped = new Error(decodeGenvmError(err));
-    (wrapped as any).code = (err as any)?.code;
-    throw wrapped;
+    throw rethrow(err, "submit");
   }
 
-  const receipt = await client.waitForTransactionReceipt({
-    hash,
-    status: TransactionStatus.ACCEPTED,
-    interval: 4000,
-    retries: 90,
-  });
-  return { hash, status: receipt.status as TransactionStatus };
+  try {
+    const receipt = await client.waitForTransactionReceipt({
+      hash,
+      status: TransactionStatus.ACCEPTED,
+      interval: 4000,
+      retries: ACCEPT_WAIT_MS / 4000,
+    });
+    return { hash, status: receipt.status as TransactionStatus };
+  } catch (err) {
+    throw rethrow(err, "confirm");
+  }
 }
 
 /** Preflight, then send. */
@@ -115,7 +149,7 @@ export async function createMatch(
     });
     predicted = BigInt(sim as any);
   } catch (err) {
-    throw new Error(decodeGenvmError(err));
+    throw rethrow(err, "preflight");
   }
 
   const result = await send(account, { functionName: "create_match", args });

@@ -10,6 +10,7 @@ import {
   reveal,
 } from "../chain/actions";
 import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
+import { confirmationFor } from "../chain/confirm";
 import { buildTicket, deriveSalt, parseTicket, primeSalt, type RecoveryTicket } from "../chain/salt";
 import type { Role } from "../chain/roles";
 import { useAction } from "../hooks/useAction";
@@ -20,14 +21,15 @@ export type PanelProps = {
   wallet: `0x${string}`;
   match: MatchState;
   role: Role;
-  onDone: () => void;
+  /** Re-reads the match; the confirmation watcher drives the page from this. */
+  refresh: () => Promise<MatchState | null>;
 };
 
 const SIGN_NOTE = "sign the salt message in your wallet; this is not a transaction";
 
 // ---- commit ---------------------------------------------------------------
 
-export function CommitPanel({ wallet, match, role, onDone }: PanelProps) {
+export function CommitPanel({ wallet, match, role, refresh }: PanelProps) {
   const field = role === "holder" ? "minimum_price" : "maximum_budget";
   const blurb =
     role === "holder"
@@ -36,7 +38,7 @@ export function CommitPanel({ wallet, match, role, onDone }: PanelProps) {
   const [value, setValue] = useState("");
   const [ticket, setTicket] = useState<RecoveryTicket | null>(null);
   const [copied, setCopied] = useState(false);
-  const a = useAction(onDone);
+  const a = useAction({ matchId: match.match_id, confirm: confirmationFor("commit", role), refresh });
 
   const go = () =>
     a.run(async (say) => {
@@ -46,9 +48,9 @@ export function CommitPanel({ wallet, match, role, onDone }: PanelProps) {
       say("hashing through the contract's compute_commitment...");
       const commitment = await computeCommitment(match.match_id, state, salt, wallet);
       say("simulating, then confirm the transaction in your wallet...");
-      const res = await commit(wallet, match.match_id, role, commitment);
+      await commit(wallet, match.match_id, role, commitment);
       setTicket(buildTicket(match.match_id, role, wallet, state, salt));
-      return `commitment sealed on-chain | ${res.status}`;
+      return "commitment sealed on-chain";
     });
 
   const json = ticket ? JSON.stringify(ticket, null, 2) : "";
@@ -116,13 +118,13 @@ export function CommitPanel({ wallet, match, role, onDone }: PanelProps) {
 
 // ---- fund -----------------------------------------------------------------
 
-export function FundPanel({ wallet, match, role, onDone }: PanelProps) {
-  const a = useAction(onDone);
+export function FundPanel({ wallet, match, role, refresh }: PanelProps) {
+  const a = useAction({ matchId: match.match_id, confirm: confirmationFor("fund", role), refresh });
   const go = () =>
     a.run(async (say) => {
       say("confirm the transaction in your wallet...");
-      const res = await fund(wallet, match.match_id, role, match.stake_amount);
-      return `stake deposited | ${res.status}`;
+      await fund(wallet, match.match_id, role, match.stake_amount);
+      return "stake deposited";
     });
 
   return (
@@ -142,14 +144,18 @@ export function FundPanel({ wallet, match, role, onDone }: PanelProps) {
 
 // ---- anchor claim ---------------------------------------------------------
 
-export function AnchorClaimPanel({ wallet, match, role, onDone }: PanelProps) {
+export function AnchorClaimPanel({ wallet, match, role, refresh }: PanelProps) {
   const [text, setText] = useState("");
-  const a = useAction(onDone);
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("anchor_claim", role),
+    refresh,
+  });
   const go = () =>
     a.run(async (say) => {
       say("simulating, then confirm the transaction in your wallet...");
-      const res = await anchorClaim(wallet, match.match_id, role, text.trim());
-      return `claim anchored | ${res.status}`;
+      await anchorClaim(wallet, match.match_id, role, text.trim());
+      return "claim anchored";
     });
 
   return (
@@ -173,15 +179,19 @@ export function AnchorClaimPanel({ wallet, match, role, onDone }: PanelProps) {
 
 // ---- propose price --------------------------------------------------------
 
-export function ProposePricePanel({ wallet, match, role, onDone }: PanelProps) {
+export function ProposePricePanel({ wallet, match, role, refresh }: PanelProps) {
   const [price, setPrice] = useState("");
-  const a = useAction(onDone);
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("propose_price", role),
+    refresh,
+  });
   const counterparty = role === "holder" ? match.buyer_proposed_price : match.holder_proposed_price;
   const go = () =>
     a.run(async (say) => {
       say("simulating, then confirm the transaction in your wallet...");
-      const res = await proposePrice(wallet, match.match_id, role, BigInt(price));
-      return `price proposed | ${res.status}`;
+      await proposePrice(wallet, match.match_id, role, BigInt(price));
+      return "price proposed";
     });
 
   return (
@@ -213,12 +223,12 @@ export function ProposePricePanel({ wallet, match, role, onDone }: PanelProps) {
 
 // ---- reveal ---------------------------------------------------------------
 
-export function RevealPanel({ wallet, match, role, onDone }: PanelProps) {
+export function RevealPanel({ wallet, match, role, refresh }: PanelProps) {
   const field = role === "holder" ? "minimum_price" : "maximum_budget";
   const [value, setValue] = useState("");
   const [ticketText, setTicketText] = useState("");
   const [showTicket, setShowTicket] = useState(false);
-  const a = useAction(onDone);
+  const a = useAction({ matchId: match.match_id, confirm: confirmationFor("reveal", role), refresh });
 
   const go = () =>
     a.run(async (say) => {
@@ -240,8 +250,8 @@ export function RevealPanel({ wallet, match, role, onDone }: PanelProps) {
       await checkReveal(wallet, match.match_id, role, state, salt);
 
       say("match confirmed; confirm the transaction in your wallet...");
-      const res = await reveal(wallet, match.match_id, role, state, salt);
-      return `constraint revealed | ${res.status}`;
+      await reveal(wallet, match.match_id, role, state, salt);
+      return "constraint revealed";
     });
 
   return (
@@ -290,18 +300,24 @@ export function RevealPanel({ wallet, match, role, onDone }: PanelProps) {
 export function AdjudicatePanel({
   wallet,
   match,
-  onDone,
+  role,
+  refresh,
 }: {
   wallet: `0x${string}`;
   match: MatchState;
-  onDone: () => void;
+  role: Role;
+  refresh: () => Promise<MatchState | null>;
 }) {
-  const a = useAction(onDone);
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("adjudicate", role),
+    refresh,
+  });
   const go = () =>
     a.run(async (say) => {
       say("confirm in your wallet; the jury runs on-chain, this is slow...");
-      const res = await adjudicate(wallet, match.match_id);
-      return `jury returned a verdict | ${res.status}`;
+      await adjudicate(wallet, match.match_id);
+      return "verdict recorded on-chain";
     });
 
   return (
@@ -311,6 +327,12 @@ export function AdjudicatePanel({
         classify both claims against the revealed evidence, so this takes
         noticeably longer than an ordinary transaction. Settlement is scheduled
         automatically once this finalizes.
+      </p>
+      <p className="turn-hint turn-hint--muted">
+        A jury round can end without writing a verdict, either because the
+        leader timed out or because the validators did not converge. Nothing is
+        spent from escrow when that happens, and this step stays open so it can
+        be summoned again.
       </p>
       <ActionButton label="SUMMON THE JURY" phase={a.phase} onClick={go} />
     </div>
@@ -322,27 +344,29 @@ export function AdjudicatePanel({
 export function ClaimActionPanel({
   wallet,
   match,
+  role,
   gate,
-  onDone,
+  refresh,
 }: {
   wallet: `0x${string}`;
   match: MatchState;
+  role: Role;
   gate: ClaimGate;
-  onDone: () => void;
+  refresh: () => Promise<MatchState | null>;
 }) {
-  const a = useAction(onDone);
+  const a = useAction({ matchId: match.match_id, confirm: confirmationFor("claim", role), refresh });
   const [payout, setPayout] = useState<string | null>(null);
   const go = () =>
     a.run(async (say) => {
       say("confirm the transaction in your wallet...");
-      const res = await sendClaim(match.match_id, wallet, (stage) =>
+      await sendClaim(match.match_id, wallet, (stage) =>
         setPayout(
           stage === "accepted"
             ? "claim accepted; the GEN is released when this transaction finalizes"
             : "payout finalized; the GEN has left escrow",
         ),
       );
-      return `claim submitted | ${res.status}`;
+      return "claim recorded";
     });
 
   const ready = gate.state === "ready";
