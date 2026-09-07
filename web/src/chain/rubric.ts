@@ -47,15 +47,26 @@ export function settlementSplit(label: Label, stake: bigint): Split | null {
 }
 
 /**
+ * Evaluating the split against a stake of exactly 100 makes the counterparty
+ * share the percentage, with no separate arithmetic to keep in step. 100 is
+ * even, so MISLEADING's integer halving is exact and no rounding creeps in.
+ */
+const PERCENT_BASIS = 100n;
+
+/**
  * One line describing what a label costs, derived from settlementSplit rather
  * than written out again, so it cannot fall out of step with the payout rule.
+ *
+ * The percentage is computed, never typed in. Hardcoding "100%" and "50%" here
+ * would be a second copy of _settle_side that nothing forces to agree with the
+ * first, which is exactly the drift this module exists to prevent.
  */
 export function consequenceText(label: RubricLabel): string {
-  const split = settlementSplit(label, 100n);
+  const split = settlementSplit(label, PERCENT_BASIS);
   if (!split) return "";
-  if (split.counterparty === 0n) return "stake returned in full";
-  if (split.agent === 0n) return "stake slashed in full to the counterparty";
-  return "half the stake slashed to the counterparty";
+  const percent = Number(split.counterparty);
+  if (percent === 0) return "0% slashed, stake returned in full";
+  return `${percent}% slashed to the counterparty`;
 }
 
 export type RubricRow = {
