@@ -4,10 +4,13 @@ import JudgeTrex from "../components/JudgeTrex";
 import HowItWorks from "../components/HowItWorks";
 import Rubric from "../components/Rubric";
 import Replay from "../components/Replay";
+import Benchmark from "../components/Benchmark";
+import Blog from "../components/Blog";
 import { hrefFor } from "../lib/route";
 
 export type LandingPageProps = {
   nav: NavShell;
+  onOpenPost: (slug: string) => void;
 };
 
 /**
@@ -21,7 +24,7 @@ export type LandingPageProps = {
  * brand image and it is always calm. In the app its mood is derived from live
  * match state and it is the status display.
  */
-export default function LandingPage({ nav }: LandingPageProps) {
+export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
   const launch = (e: MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
@@ -101,6 +104,8 @@ export default function LandingPage({ nav }: LandingPageProps) {
       <HowItWorks match={null} />
       <Rubric match={null} />
       <Replay match={null} />
+      <Benchmark />
+      <Blog onOpenPost={onOpenPost} />
 
       <p className="thesis">
         CRYPTOGRAPHY ESTABLISHES WHAT EACH AGENT COMMITTED TO.

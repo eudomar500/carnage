@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LandingPage from "./pages/LandingPage";
 import MatchApp from "./pages/MatchApp";
+import PostPage from "./pages/PostPage";
+import { findPost } from "./content/posts";
 import type { NavShell } from "./components/TopNav";
 import { connectWallet, disconnectWallet, watchWallet } from "./chain/client";
 import { hrefFor, routeFromUrl, type Route } from "./lib/route";
@@ -53,6 +55,7 @@ export default function App() {
   const onLaunch = useCallback(() => go({ view: "app", matchId: null }), [go]);
   const onEntry = onLaunch;
   const onOpenMatch = useCallback((id: number) => go({ view: "app", matchId: id }), [go]);
+  const onOpenPost = useCallback((slug: string) => go({ view: "post", slug }), [go]);
   const onCreated = useCallback((id: bigint) => go({ view: "app", matchId: Number(id) }), [go]);
 
   // Back and forward re-derive the whole route, so history stays authoritative
@@ -88,8 +91,15 @@ export default function App() {
 
   const nav: NavShell = { wallet, connecting, onConnect, onDisconnect, onHome, onLaunch };
 
-  if (!preview && route.view === "landing") {
-    return <LandingPage nav={nav} />;
+  // An unknown slug is a typo or a stale link. The landing carries the list of
+  // what does exist, so that is where it goes, rather than an empty shell.
+  const post = !preview && route.view === "post" ? findPost(route.slug) : null;
+  if (post) {
+    return <PostPage nav={nav} post={post} />;
+  }
+
+  if (!preview && (route.view === "landing" || route.view === "post")) {
+    return <LandingPage nav={nav} onOpenPost={onOpenPost} />;
   }
 
   return (

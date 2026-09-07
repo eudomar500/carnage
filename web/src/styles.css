@@ -1354,3 +1354,216 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .proof-status--final { color: var(--green); }
 
 .proof-miss { color: var(--ink-faint); font-style: italic; }
+
+/* ---------- benchmark ------------------------------------------------- */
+
+.bench {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px;
+  align-items: start;
+}
+
+.bench-col { display: grid; gap: 14px; }
+
+.bench-para {
+  margin: 0; max-width: 88ch;
+  font-size: 12px; line-height: 1.8; color: var(--ink-dim);
+}
+.bench-para--wide { margin-top: 26px; max-width: 100ch; }
+
+/* The figure is external research, so the attribution is part of the block
+   rather than a footnote somewhere below it. */
+.bench-callout {
+  border: 1px solid rgba(201, 162, 39, 0.4);
+  background: rgba(201, 162, 39, 0.04);
+  padding: 16px 18px 18px;
+}
+.bench-callout-key {
+  font-size: 9.5px; letter-spacing: 0.18em; color: var(--amber);
+}
+.bench-callout-figure {
+  margin: 8px 0 10px;
+  font-family: var(--display); font-weight: 400;
+  font-size: 46px; line-height: 1; letter-spacing: 0.03em;
+  color: var(--amber);
+}
+.bench-callout-text {
+  margin: 0; font-size: 11px; line-height: 1.7; color: var(--ink-dim);
+}
+.bench-callout-note {
+  margin: 10px 0 0; padding-top: 9px;
+  border-top: 1px solid rgba(201, 162, 39, 0.28);
+  font-size: 10px; letter-spacing: 0.12em; color: var(--ink-faint);
+  text-transform: uppercase;
+}
+
+.bench-sub {
+  margin: 30px 0 14px; font-weight: 500;
+  font-size: 12px; letter-spacing: 0.18em; color: var(--ink);
+}
+
+.bench-metrics {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;
+}
+.metric {
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid var(--crimson-dim);
+  background: var(--panel);
+  padding: 12px 15px 13px;
+}
+.metric-no { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.1em; }
+.metric-key { font-size: 12px; letter-spacing: 0.06em; color: var(--crimson); }
+.metric-text {
+  grid-column: 2; font-size: 11.5px; line-height: 1.65; color: var(--ink-dim);
+}
+
+.bench-close {
+  margin: 30px 0 0; padding: 16px 20px;
+  border-left: 2px solid var(--crimson);
+  background: rgba(224, 36, 28, 0.05);
+  max-width: 88ch;
+  font-size: 14px; line-height: 1.7; color: var(--ink);
+}
+
+/* ---------- references ------------------------------------------------- */
+
+.refs { margin-top: 26px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.refs-title { font-size: 9.5px; letter-spacing: 0.18em; color: var(--ink-faint); }
+.refs-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 9px; }
+.ref {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px;
+  align-items: baseline; font-size: 11.5px;
+}
+.ref-no { color: var(--ink-faint); }
+.ref-link {
+  color: var(--ink-dim); text-decoration: none;
+  border-bottom: 1px dotted var(--steel);
+  line-height: 1.6;
+}
+.ref-link:hover { color: var(--crimson); border-bottom-color: var(--crimson); }
+.ref-host { font-size: 10px; letter-spacing: 0.1em; color: var(--ink-faint); }
+
+@media (max-width: 1100px) {
+  .bench { grid-template-columns: 1fr; }
+  .bench-callout { max-width: 420px; }
+}
+
+@media (max-width: 620px) {
+  .ref { grid-template-columns: auto minmax(0, 1fr); }
+  .ref-host { display: none; }
+}
+
+/* ---------- article banner -------------------------------------------- */
+
+.banner {
+  border: 1px solid rgba(224, 36, 28, 0.22);
+  background: var(--obsidian);
+  line-height: 0;
+}
+.banner-svg { display: block; width: 100%; height: auto; }
+
+.banner-label {
+  font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.2em;
+  fill: var(--ink-faint);
+}
+.banner-label--jury { fill: var(--crimson); letter-spacing: 0.32em; }
+.banner-label--green { fill: var(--green); }
+
+.banner-formula {
+  font-family: var(--mono);
+  font-size: 14px; letter-spacing: 0.02em;
+  fill: var(--ink);
+}
+
+/* ---------- blog list ------------------------------------------------- */
+
+.posts { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+
+.post-card { border: 1px solid rgba(255, 255, 255, 0.08); background: var(--panel); }
+.post-card-link {
+  display: block; padding: 18px 22px 20px;
+  text-decoration: none;
+  border-left: 2px solid var(--crimson-dim);
+  transition: border-color 0.18s, background 0.18s;
+}
+.post-card-link:hover {
+  border-left-color: var(--crimson);
+  background: rgba(224, 36, 28, 0.05);
+}
+.post-card-date {
+  display: block;
+  font-size: 9.5px; letter-spacing: 0.2em; color: var(--ink-faint);
+}
+.post-card-title {
+  margin: 9px 0 0;
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(21px, 2.6vw, 30px); line-height: 1.15; letter-spacing: 0.01em;
+  color: var(--crimson);
+}
+.post-card-summary {
+  margin: 11px 0 0; max-width: 78ch;
+  font-size: 12.5px; line-height: 1.75; color: var(--ink-dim);
+}
+.post-card-cta {
+  display: inline-block; margin-top: 14px;
+  font-size: 10px; letter-spacing: 0.18em; color: var(--ink-faint);
+}
+.post-card-link:hover .post-card-cta { color: var(--crimson); }
+
+/* ---------- article reading view -------------------------------------- */
+
+.post {
+  position: relative; z-index: 10;
+  max-width: 900px; margin: 0 auto;
+  padding: 34px 24px 70px;
+}
+
+.post-head { margin: 34px 0 0; }
+.post-date { font-size: 10px; letter-spacing: 0.22em; color: var(--ink-faint); }
+.post-title {
+  margin: 14px 0 0;
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(32px, 5.2vw, 56px); line-height: 1.04; letter-spacing: 0.01em;
+  color: var(--crimson);
+  text-shadow: 0 0 34px rgba(224, 36, 28, 0.28);
+}
+.post-summary {
+  margin: 18px 0 0; max-width: 70ch;
+  font-size: 13px; line-height: 1.75; color: var(--ink-dim);
+}
+
+.post-body {
+  margin-top: 34px; padding-top: 26px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* Long-form needs a longer measure and looser leading than the 13px UI text. */
+.post-body p {
+  margin: 0 0 22px; max-width: 74ch;
+  font-size: 14.5px; line-height: 1.85; color: var(--ink);
+}
+.post-body p:last-child { margin-bottom: 0; }
+
+.post-quote {
+  margin: 0 0 22px; padding: 18px 22px; max-width: 74ch;
+  border-left: 2px solid var(--crimson);
+  background: rgba(224, 36, 28, 0.06);
+  font-size: 14.5px; line-height: 1.75; color: var(--ink);
+}
+
+.post-link {
+  color: var(--crimson); text-decoration: none;
+  border-bottom: 1px solid var(--crimson-dim);
+}
+.post-link:hover { border-bottom-color: var(--crimson); }
+
+.post-foot {
+  margin-top: 44px; padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 700px) {
+  .post { padding: 24px 20px 54px; }
+  .post-body p, .post-quote { font-size: 14px; }
+}

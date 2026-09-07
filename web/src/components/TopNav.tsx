@@ -16,10 +16,23 @@ import { shortAddress } from "../lib/format";
  * only when a match is actually loaded to replay.
  */
 
-const SECTIONS = [
+type Section = {
+  label: string;
+  hash: string;
+  /** Lives on the landing only; the app nav does not advertise it. */
+  landingOnly?: boolean;
+};
+
+const SECTIONS: Section[] = [
   { label: "HOW IT WORKS", hash: "how-it-works" },
   { label: "RUBRIC", hash: "rubric" },
   { label: "REPLAY", hash: "replay" },
+  // Dropped from the app nav rather than linked back to the landing. The
+  // benchmark is positioning you read once, not something you consult in the
+  // middle of a match the way you consult what MISLEADING costs you, and the
+  // app nav already carries the wallet, the way back and up to three links.
+  { label: "BENCHMARK", hash: "benchmark", landingOnly: true },
+  { label: "BLOG", hash: "blog", landingOnly: true },
 ];
 
 /** The parts of the nav the router owns and both pages pass straight through. */
@@ -35,7 +48,12 @@ export type NavShell = {
 };
 
 export type TopNavProps = NavShell & {
-  variant: "landing" | "app";
+  /**
+   * Which page the nav is sitting on. "post" is the presentation side like
+   * "landing", but its sections live on another page, so their links have to
+   * navigate rather than scroll.
+   */
+  variant: "landing" | "app" | "post";
   /** App variant only: a match is loaded, so #replay is on this screen. */
   hasReplay?: boolean;
 };
@@ -56,6 +74,7 @@ export default function TopNav({
   hasReplay = false,
 }: TopNavProps) {
   const onLanding = variant === "landing";
+  const isApp = variant === "app";
   const homeHref = hrefFor({ view: "landing" });
 
   const goHome = (hash?: string) => (e: MouseEvent) => {
@@ -74,9 +93,17 @@ export default function TopNav({
     <header className="nav">
       <a className="nav-logo" href={homeHref} onClick={goHome()}>CARNAGE</a>
 
-      {onLanding ? null : (
+      {onLanding ? null : isApp ? (
         <a className="nav-back" href={homeHref} onClick={goHome()}>
           &lt;&lt; BACK TO SITE
+        </a>
+      ) : (
+        <a
+          className="nav-back"
+          href={hrefFor({ view: "landing" }, "blog")}
+          onClick={goHome("blog")}
+        >
+          &lt;&lt; BACK TO BLOG
         </a>
       )}
 
@@ -84,9 +111,13 @@ export default function TopNav({
         {SECTIONS.map((s) => {
           // On the landing every section is on this page. In the app, REPLAY
           // is on this page when a match is loaded and is omitted otherwise;
-          // the other two go back to the landing at their anchor.
-          const inPage = onLanding || s.hash === "replay";
-          if (!onLanding && s.hash === "replay" && !hasReplay) return null;
+          // the rest go back to the landing at their anchor. Landing-only
+          // sections are dropped from the app nav but kept on a post, which is
+          // the same presentation side of the product.
+          const inPage = onLanding || (isApp && s.hash === "replay");
+          if (isApp && s.landingOnly) return null;
+          if (isApp && s.hash === "replay" && !hasReplay) return null;
+          if (variant === "post" && s.hash === "replay") return null;
           return inPage ? (
             <a key={s.hash} href={`#${s.hash}`}>{s.label}</a>
           ) : (
@@ -101,7 +132,7 @@ export default function TopNav({
         })}
       </nav>
 
-      {onLanding ? (
+      {isApp ? null : (
         <div className="nav-right">
           {/*
             No connect button here. The landing performs no chain action, so a
@@ -120,7 +151,9 @@ export default function TopNav({
             LAUNCH APP
           </a>
         </div>
-      ) : wallet ? (
+      )}
+
+      {!isApp ? null : wallet ? (
         <span className="nav-wallet" title={wallet}>
           <span className="nav-wallet-dot" aria-hidden="true" />
           <span className="nav-wallet-addr">{shortAddress(wallet, 4, 4)}</span>

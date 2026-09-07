@@ -12,10 +12,16 @@
  */
 export type Route =
   | { view: "landing" }
+  | { view: "post"; slug: string }
   | { view: "app"; matchId: number | null };
 
 export function routeFromUrl(): Route {
   const q = new URLSearchParams(location.search);
+
+  // Which slugs exist is content, not routing. The router resolves the slug
+  // and falls back to the landing when it names nothing.
+  const slug = q.get("post");
+  if (slug) return { view: "post", slug };
 
   const raw = q.get("match");
   if (raw !== null) {
@@ -42,8 +48,11 @@ export function hrefFor(route: Route, hash?: string): string {
   url.hash = "";
   url.searchParams.delete("match");
   url.searchParams.delete("app");
+  url.searchParams.delete("post");
 
-  if (route.view === "app") {
+  if (route.view === "post") {
+    url.searchParams.set("post", route.slug);
+  } else if (route.view === "app") {
     if (route.matchId === null) url.searchParams.set("app", "1");
     else url.searchParams.set("match", String(route.matchId));
   }
