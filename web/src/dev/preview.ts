@@ -107,7 +107,10 @@ export const PREVIEWS: Record<string, PreviewScenario> = {
   },
 };
 
-export function previewFromUrl(): { key: string; scenario: PreviewScenario } | null {
+/** A resolved preview: which scenario key was asked for, and its state. */
+export type PreviewSelection = { key: string; scenario: PreviewScenario };
+
+export function previewFromUrl(): PreviewSelection | null {
   if (!import.meta.env.DEV) return null;
   const key = new URLSearchParams(location.search).get("preview");
   if (!key) return null;

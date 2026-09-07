@@ -14,10 +14,19 @@ function isoInDays(days: number): string {
 export type CreatePanelProps = {
   wallet: `0x${string}` | null;
   onCreated: (matchId: bigint) => void;
+  /**
+   * Opening line. The panel is reached from two places that need different
+   * framing: an id that was never minted, and the start screen where there is
+   * no id in play at all.
+   */
+  lede?: string;
 };
 
+const DEFAULT_LEDE =
+  "No match at this id yet. Opening one is permissionless: any wallet may seat two agents. You do not have to be either of them.";
+
 /** create_match is permissionless: any wallet may open a match. */
-export default function CreatePanel({ wallet, onCreated }: CreatePanelProps) {
+export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: CreatePanelProps) {
   const [holder, setHolder] = useState("");
   const [buyer, setBuyer] = useState("");
   const [floor, setFloor] = useState("500");
@@ -51,10 +60,7 @@ export default function CreatePanel({ wallet, onCreated }: CreatePanelProps) {
 
   return (
     <div className="console-body">
-      <p className="console-lede">
-        No match at this id yet. Opening one is permissionless: any wallet may
-        seat two agents. You do not have to be either of them.
-      </p>
+      <p className="console-lede">{lede}</p>
 
       <div className="form-grid">
         <label className="form-row form-row--wide">

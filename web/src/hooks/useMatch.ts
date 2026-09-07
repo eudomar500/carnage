@@ -27,13 +27,18 @@ export type MatchFeed = {
   refresh: () => Promise<MatchState | null>;
 };
 
-/** Polls get_match and keeps the hero in sync. */
-export function useMatch(matchId: number): MatchFeed {
+/**
+ * Polls get_match and keeps the hero in sync.
+ *
+ * A null id is the start screen: no match is selected, so there is nothing to
+ * read and the hook stays idle rather than burning a poll on a placeholder.
+ */
+export function useMatch(matchId: number | null): MatchFeed {
   const [view, setView] = useState<MatchView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(matchId !== null);
   const [tick, setTick] = useState(0);
 
   const alive = useRef(true);
@@ -43,6 +48,7 @@ export function useMatch(matchId: number): MatchFeed {
   const inflight = useRef<Promise<MatchState | null> | null>(null);
 
   const read = useCallback(async (): Promise<MatchState | null> => {
+    if (matchId === null) return null;
     try {
       const next = await getMatchView(matchId);
       if (!alive.current) return next.accepted;
@@ -89,6 +95,11 @@ export function useMatch(matchId: number): MatchFeed {
   }, [read]);
 
   useEffect(() => {
+    // Nothing to poll on the start screen. State from a previous match is
+    // left untouched and masked below rather than cleared here, so this does
+    // not cost a render.
+    if (matchId === null) return;
+
     alive.current = true;
     hasView.current = false;
     delay.current = POLL_MS;
@@ -110,7 +121,11 @@ export function useMatch(matchId: number): MatchFeed {
       alive.current = false;
       if (timer) clearTimeout(timer);
     };
-  }, [refresh]);
+  }, [matchId, refresh]);
+
+  if (matchId === null) {
+    return { view: null, notFound: false, error: null, degraded: null, loading: false, tick: 0, refresh };
+  }
 
   return { view, notFound, error, degraded, loading, tick, refresh };
 }

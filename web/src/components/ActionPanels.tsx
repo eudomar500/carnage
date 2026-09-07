@@ -370,6 +370,31 @@ export function ClaimActionPanel({
     });
 
   const ready = gate.state === "ready";
+
+  /**
+   * The console only shows this panel once settlement has run, so the seat
+   * either has a payout waiting or has nothing left to take. Labelling every
+   * non-ready case as "waiting for finalization" contradicted the reason line
+   * beside it, which already said the balance was gone.
+   *
+   * "SETTLEMENT COMPLETE" rather than "FULLY CLAIMED": a zero balance does not
+   * always mean the money was withdrawn. An agent labelled FALSE has its whole
+   * stake slashed to the counterparty, so it never had anything to claim and
+   * nothing was claimed. The escrow panel also uses "FULLY CLAIMED" for the
+   * whole pool, and the two would read as the same statement about different
+   * things.
+   *
+   * The other two states cannot reach here today, but they are spelled out so
+   * this stays right if the console ever widens what it shows.
+   */
+  const label = ready
+    ? `CLAIM ${formatToken(gate.amount)} ${TOKEN_SYMBOL}`
+    : gate.state === "nothing-to-claim"
+      ? "SETTLEMENT COMPLETE"
+      : gate.state === "not-settled"
+        ? "WAITING FOR FINALIZATION"
+        : "NOT A PARTY TO THIS MATCH";
+
   return (
     <div className="panel-form">
       <p className="turn-hint">
@@ -378,7 +403,7 @@ export function ClaimActionPanel({
           : `${gate.reason}.`}
       </p>
       <ActionButton
-        label={ready ? `CLAIM ${formatToken(gate.amount)} ${TOKEN_SYMBOL}` : "WAITING FOR FINALIZATION"}
+        label={label}
         phase={a.phase}
         disabled={!ready}
         onClick={go}
