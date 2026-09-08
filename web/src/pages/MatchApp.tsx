@@ -10,7 +10,8 @@ import AppEntry from "../components/AppEntry";
 import Replay from "../components/Replay";
 import { Vault } from "../components/Icons";
 import { useMatch } from "../hooks/useMatch";
-import { claimGate, isDishonest, sendClaim } from "../chain/contract";
+import { claimGate, isDishonest } from "../chain/contract";
+import { seatOf } from "../chain/roles";
 import { derivePhase, isStrike, judgeMood } from "../chain/phase";
 import { CARNAGE_ADDRESS } from "../chain/client";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
@@ -79,10 +80,6 @@ export default function MatchApp({
   useEffect(() => () => { if (reactTimer.current) clearTimeout(reactTimer.current); }, []);
 
   const wallet = nav.wallet;
-  const onClaim = useCallback(async () => {
-    if (!wallet || matchId === null) return;
-    await sendClaim(matchId, wallet);
-  }, [wallet, matchId]);
 
   const m = effective;
   const live = Boolean(m && phase);
@@ -279,7 +276,13 @@ export default function MatchApp({
                 : "FULLY CLAIMED"
               : "LOCKED IN CONTRACT"}
           </div>
-          <ClaimPanel gate={gate} wallet={wallet} onClaim={onClaim} />
+          <ClaimPanel
+            gate={gate}
+            wallet={wallet}
+            match={m}
+            role={seatOf(m, wallet) === "buyer" ? "buyer" : "holder"}
+            refresh={refresh}
+          />
         </div>
       </section>
 

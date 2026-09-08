@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  acceptSinkAddress,
   adjudicate,
   anchorClaim,
   checkReveal,
   commit,
   computeCommitment,
+  forceSettle,
   fund,
   proposePrice,
+  proposeSinkAddress,
+  refundBeforeLock,
   reveal,
 } from "../chain/actions";
 import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
 import { confirmationFor } from "../chain/confirm";
 import { buildTicket, deriveSalt, parseTicket, primeSalt, type RecoveryTicket } from "../chain/salt";
-import type { Role } from "../chain/roles";
+import { sinkTransferPending, ZERO_ADDRESS, type Role } from "../chain/roles";
 import { useAction } from "../hooks/useAction";
 import ActionButton from "./ActionButton";
 import { formatToken, TOKEN_SYMBOL } from "../lib/format";
@@ -45,8 +49,8 @@ export function CommitPanel({ wallet, match, role, refresh }: PanelProps) {
       const state = BigInt(value);
       say(SIGN_NOTE);
       const salt = await deriveSalt(match.match_id, role, wallet);
-      say("hashing through the contract's compute_commitment...");
-      const commitment = await computeCommitment(match.match_id, state, salt, wallet);
+      say("hashing locally, the secret never leaves this browser...");
+      const commitment = computeCommitment(match.match_id, state, salt, wallet);
       say("simulating, then confirm the transaction in your wallet...");
       await commit(wallet, match.match_id, role, commitment);
       setTicket(buildTicket(match.match_id, role, wallet, state, salt));
@@ -409,6 +413,245 @@ export function ClaimActionPanel({
         onClick={go}
       />
       {payout ? <p className="act-step act-step--muted">{payout}</p> : null}
+    </div>
+  );
+}
+
+// ---- recovery -------------------------------------------------------------
+
+/**
+ * Permissionless exit for a match that funded and then stalled before the
+ * deal price locked.
+ *
+ * The console only mounts this once the lock deadline has passed, so the
+ * panel itself does not re-gate on the clock. The contract checks block time
+ * regardless, and the preflight inside refundBeforeLock surfaces its answer.
+ */
+export function RefundBeforeLockPanel({ wallet, match, role, refresh }: PanelProps) {
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("refund_before_lock", role),
+    refresh,
+  });
+  const go = () =>
+    a.run(async (say) => {
+      say("simulating, then confirm the transaction in your wallet...");
+      await refundBeforeLock(wallet, match.match_id);
+      return "stakes refunded";
+    });
+
+  return (
+    <div className="panel-form">
+      <p className="turn-hint">
+        The two sides funded but never agreed a deal price, and the lock
+        deadline has passed. Anyone may trigger the refund: the holder gets
+        back {formatToken(match.holder_escrow)} {TOKEN_SYMBOL} and the buyer
+        {" "}{formatToken(match.buyer_escrow)} {TOKEN_SYMBOL}, exactly what each
+        one funded. Nothing is slashed and nothing goes to the sink, because
+        nobody broke a rule here.
+      </p>
+      <p className="turn-hint turn-hint--muted">
+        Refunds are credited as claimable balances, so each side still
+        withdraws its own with claim().
+      </p>
+      <ActionButton label="REFUND STAKES" phase={a.phase} onClick={go} />
+    </div>
+  );
+}
+
+/**
+ * Permissionless fallback for a verdict that never got paid out.
+ *
+ * get_match does not expose adjudicated_at, so this cannot show a countdown.
+ * The button is offered whenever a match is adjudicated and unsettled, and
+ * the preflight answers with the contract's own "settle grace period has not
+ * passed yet" when it is still too early.
+ */
+export function ForceSettlePanel({ wallet, match, role, refresh }: PanelProps) {
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("force_settle", role),
+    refresh,
+  });
+  const go = () =>
+    a.run(async (say) => {
+      say("simulating, then confirm the transaction in your wallet...");
+      await forceSettle(wallet, match.match_id);
+      return "settlement applied";
+    });
+
+  return (
+    <div className="panel-form">
+      <p className="turn-hint">
+        <strong>This only works about 2 hours after adjudication.</strong>{" "}
+        Settlement normally runs by itself: adjudicate schedules it for the
+        moment that transaction finalizes, which takes a while on this chain.
+        Give the automatic path the first go.
+      </p>
+      <p className="turn-hint turn-hint--muted">
+        Press it earlier and nothing is signed or spent: the simulation that
+        runs before your wallet opens comes back with the contract's own
+        "settle grace period has not passed yet", and the button simply
+        re-enables. After the grace period it applies the same stored labels
+        through the same settlement rule the automatic path would have used.
+      </p>
+      <ActionButton label="FORCE SETTLEMENT" phase={a.phase} onClick={go} />
+    </div>
+  );
+}
+
+// ---- protocol sink --------------------------------------------------------
+
+/** Withdraws the sink's own credited balance. Same claim() as a player uses. */
+export function SinkClaimPanel({ wallet, match, role, gate, refresh }: PanelProps & { gate: ClaimGate }) {
+  const a = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("claim_sink", role),
+    refresh,
+  });
+  const [payout, setPayout] = useState<string | null>(null);
+  const go = () =>
+    a.run(async (say) => {
+      say("confirm the transaction in your wallet...");
+      await sendClaim(match.match_id, wallet, (stage) =>
+        setPayout(
+          stage === "accepted"
+            ? "claim accepted; the GEN is released when this transaction finalizes"
+            : "payout finalized; the GEN has left escrow",
+        ),
+      );
+      return "sink balance claimed";
+    });
+
+  const ready = gate.state === "ready";
+  return (
+    <div className="panel-form">
+      <p className="turn-hint">
+        {ready
+          ? `Both sides drew an adverse label, so the slashed portions went to the sink instead of crossing between them. ${formatToken(gate.amount)} ${TOKEN_SYMBOL} is claimable.`
+          : `${gate.reason}.`}
+      </p>
+      <ActionButton
+        label={ready ? `CLAIM ${formatToken(gate.amount)} ${TOKEN_SYMBOL}` : "NOTHING TO CLAIM"}
+        phase={a.phase}
+        disabled={!ready}
+        onClick={go}
+      />
+      {payout ? <p className="act-step act-step--muted">{payout}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The two-step sink handover.
+ *
+ * One step per wallet: the current sink proposes, and only the proposed
+ * address can accept. A mistyped address can never take the role, because it
+ * would have to send the acceptance itself.
+ */
+export function SinkTransferPanel({ wallet, match, role, refresh }: PanelProps) {
+  const [next, setNext] = useState("");
+  const propose = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("propose_sink", role),
+    refresh,
+  });
+  const accept = useAction({
+    matchId: match.match_id,
+    confirm: confirmationFor("accept_sink", role),
+    refresh,
+  });
+
+  const isSink = match.sink_address.toLowerCase() === wallet.toLowerCase();
+  const pending = sinkTransferPending(match);
+  const isPending = pending && match.pending_sink.toLowerCase() === wallet.toLowerCase();
+
+  /**
+   * Once the chain shows the new pending sink, the form goes live again.
+   *
+   * A confirmed action stays disabled by design, which is right for a step
+   * that happens once. Proposing is not that: a sink may overwrite a pending
+   * proposal, or cancel it by proposing the zero address, and neither should
+   * need a page reload. Resetting on the observed change rather than on the
+   * send keeps the button disabled until the result is actually visible.
+   */
+  useEffect(() => {
+    if (propose.phase.kind === "confirmed") {
+      propose.reset();
+      setNext("");
+    }
+    // Only the observed pending sink drives this. Depending on the phase too
+    // would reset the moment the send confirmed, before anyone could see it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match.pending_sink]);
+
+  const doPropose = () =>
+    propose.run(async (say) => {
+      say("simulating, then confirm the transaction in your wallet...");
+      await proposeSinkAddress(wallet, next.trim());
+      return "proposal recorded";
+    });
+
+  const doAccept = () =>
+    accept.run(async (say) => {
+      say("simulating, then confirm the transaction in your wallet...");
+      await acceptSinkAddress(wallet);
+      return "sink role accepted";
+    });
+
+  return (
+    <div className="panel-form">
+      <p className="turn-hint">
+        The sink holds what both-lie settlements forfeit. Handing it over takes
+        two transactions from two wallets: the current sink proposes, and the
+        proposed address accepts. The role does not move until it does.
+      </p>
+
+      <div className="sink-facts">
+        <p className="turn-hint turn-hint--muted">
+          current sink: <code>{match.sink_address}</code>
+        </p>
+        <p className="turn-hint turn-hint--muted">
+          {pending
+            ? <>pending: <code>{match.pending_sink}</code>, waiting for that address to accept</>
+            : "no transfer pending"}
+        </p>
+      </div>
+
+      {isSink ? (
+        <>
+          <label className="form-row form-row--wide">
+            <span>new sink address</span>
+            <input
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              placeholder="0x..."
+              spellCheck={false}
+            />
+          </label>
+          <p className="turn-hint turn-hint--muted">
+            Proposing the zero address ({ZERO_ADDRESS}) cancels a pending
+            transfer.
+          </p>
+          <ActionButton
+            label="PROPOSE SINK TRANSFER"
+            phase={propose.phase}
+            disabled={!next.trim()}
+            onClick={doPropose}
+          />
+        </>
+      ) : null}
+
+      {isPending ? (
+        <>
+          <p className="turn-hint">
+            This wallet is the pending sink. Accepting completes the handover
+            and clears the pending slot, so the same acceptance cannot be
+            replayed later.
+          </p>
+          <ActionButton label="ACCEPT SINK ROLE" phase={accept.phase} onClick={doAccept} />
+        </>
+      ) : null}
     </div>
   );
 }

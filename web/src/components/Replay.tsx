@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import type { Label, MatchState } from "../chain/contract";
+import { isDishonest, type Label, type MatchState } from "../chain/contract";
 import { BRANCHES, isResolved } from "../chain/lifecycle";
 import { settlementSplit } from "../chain/rubric";
 import { explorerTxUrl, requiredMethods, type LinkedMethod } from "../chain/txlog";
@@ -174,6 +174,7 @@ function buildFrames(m: MatchState): Frame[] {
       caption:
         "Both commitments opened and rehashed by the contract. The figures beside each constraint are arithmetic against the locked deal price, not an interpretation of anyone's claim.",
       body: (
+        <>
         <div className="rep-sides">
           <Side role="HOLDER" address={m.holder}>
             {m.holder_revealed ? (
@@ -206,6 +207,14 @@ function buildFrames(m: MatchState): Frame[] {
             )}
           </Side>
         </div>
+        {m.coherence_known ? (
+          <p className="rep-quiet">
+            {m.coherent
+              ? "The two revealed constraints bracket the deal price: the holder's minimum sits at or below it, and the buyer's budget at or above it."
+              : "The two revealed constraints do not bracket the deal price. The contract records that and does nothing about it: what a side commits is its own business, and only the claims are judged."}
+          </p>
+        ) : null}
+        </>
       ),
     });
   }
@@ -287,9 +296,15 @@ function Settlement({ m }: { m: MatchState }) {
     const h = settlementSplit(m.holder_label, stake);
     const b = settlementSplit(m.buyer_label, stake);
     if (h && b) {
-      const holderAward = h.agent + b.counterparty;
-      const buyerAward = b.agent + h.counterparty;
+      // When both labels are adverse the slashed portions go to the sink
+      // instead of crossing, exactly as _apply_settlement does it. Crossing
+      // them would pay two liars what two honest players get.
+      const bothLied = isDishonest(m.holder_label) && isDishonest(m.buyer_label);
+      const holderAward = bothLied ? h.agent : h.agent + b.counterparty;
+      const buyerAward = bothLied ? b.agent : b.agent + h.counterparty;
+      const sinkAward = bothLied ? h.counterparty + b.counterparty : 0n;
       return (
+        <>
         <div className="rep-sides">
           <Side role="HOLDER" address={m.holder}>
             <Stat k="awarded" v={`${formatToken(holderAward)} ${TOKEN_SYMBOL}`} />
@@ -304,6 +319,13 @@ function Settlement({ m }: { m: MatchState }) {
             <Stat k="still unclaimed" v={`${formatToken(m.buyer_claimable)} ${TOKEN_SYMBOL}`} />
           </Side>
         </div>
+        {sinkAward > 0n ? (
+          <div className="rep-grid">
+            <Stat k="forfeited to the sink" v={`${formatToken(sinkAward)} ${TOKEN_SYMBOL}`} />
+            <Stat k="sink unclaimed" v={`${formatToken(m.sink_claimable)} ${TOKEN_SYMBOL}`} />
+          </div>
+        ) : null}
+        </>
       );
     }
   }
@@ -311,18 +333,23 @@ function Settlement({ m }: { m: MatchState }) {
   // Both deterministic exits credit balances directly rather than through a
   // label, so the recorded credits are the outcome and there is nothing to
   // recompute. Report what the contract wrote.
+  const NO_REVEAL_TEXT: Record<string, string> = {
+    HOLDER_REVEALED_BUYER_SLASHED: "The buyer never revealed. The whole pool went to the holder.",
+    BUYER_REVEALED_HOLDER_SLASHED: "The holder never revealed. The whole pool went to the buyer.",
+    BOTH_UNREVEALED_REFUNDED:
+      "Neither side revealed. Nobody beat anybody, so both stakes went back to their owners and the sink took nothing.",
+  };
+
   const what = m.no_reveal_resolved
-    ? m.holder_revealed && !m.buyer_revealed
-      ? "The buyer never revealed. The whole pool went to the holder."
-      : m.buyer_revealed && !m.holder_revealed
-        ? "The holder never revealed. The whole pool went to the buyer."
-        : "Neither side revealed. Both stakes were forfeited to the protocol sink."
+    ? (NO_REVEAL_TEXT[m.no_reveal_outcome] ??
+       "The reveal deadline passed with a side still unrevealed.")
     : "The jury never reached consensus before the deadline. Each side was refunded its own stake, with no slash and no transfer.";
 
   return (
     <>
       <p className="rep-branch-when">{what}</p>
       <div className="rep-grid">
+        {m.no_reveal_outcome ? <Stat k="recorded outcome" v={m.no_reveal_outcome} /> : null}
         <Stat k="holder unclaimed" v={`${formatToken(m.holder_claimable)} ${TOKEN_SYMBOL}`} />
         <Stat k="buyer unclaimed" v={`${formatToken(m.buyer_claimable)} ${TOKEN_SYMBOL}`} />
         <Stat k="sink unclaimed" v={`${formatToken(m.sink_claimable)} ${TOKEN_SYMBOL}`} />

@@ -1645,3 +1645,99 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
   .post { padding: 24px 20px 54px; }
   .post-body p, .post-quote { font-size: 14px; }
 }
+
+/* ---------- notification bell ----------------------------------------- */
+
+/*
+ * The bell takes the auto margin that normally pushes the wallet right, and
+ * cancels the wallet's own so the two sit together at the end of the nav
+ * rather than splitting the free space between them.
+ */
+.bell { position: relative; margin-left: auto; }
+.bell ~ .nav-wallet { margin-left: 0; }
+
+.bell-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 10px;
+  background: none;
+  border: 1px solid var(--steel-dim);
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 12px; letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.bell-btn:hover { color: var(--ink); border-color: var(--steel); }
+.bell-btn--live { color: var(--ink); border-color: rgba(224, 36, 28, 0.55); }
+
+.bell-ico { width: 18px; height: 18px; }
+
+.bell-count {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 16px; padding: 0 4px;
+  background: var(--crimson); color: #fff;
+  font-size: 10px; line-height: 16px; text-align: center;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--obsidian);
+}
+
+.bell-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  width: min(420px, calc(100vw - 40px));
+  background: var(--obsidian-lift);
+  border: 1px solid var(--steel-dim);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+
+.bell-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--steel-dim);
+}
+.bell-title { font-size: 11px; letter-spacing: 0.18em; color: var(--ink-dim); }
+
+.bell-empty { padding: 18px 14px; margin: 0; color: var(--ink-faint); font-size: 13px; line-height: 1.5; }
+
+.bell-list { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+.bell-item { border-bottom: 1px solid rgba(58, 58, 67, 0.5); }
+.bell-item:last-child { border-bottom: none; }
+.bell-item--action { border-left: 2px solid var(--crimson); }
+.bell-item--info { border-left: 2px solid var(--steel-dim); }
+
+.bell-link {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+  padding: 12px 14px; text-decoration: none;
+}
+.bell-link:hover { background: rgba(255, 255, 255, 0.03); }
+.bell-item-title { color: var(--ink); font-size: 13px; }
+.bell-item-match { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.08em; }
+.bell-item-detail { grid-column: 1 / -1; color: var(--ink-dim); font-size: 12px; line-height: 1.45; }
+
+.bell-dismiss { display: block; margin: 0 14px 10px; font-size: 11px; }
+
+.bell-foot {
+  margin: 0; padding: 10px 14px;
+  border-top: 1px solid var(--steel-dim);
+  color: var(--ink-faint); font-size: 11px; letter-spacing: 0.06em;
+}
+
+/* ---------- bell roster ------------------------------------------------ */
+
+.bell-roster { border-top: 1px solid var(--steel-dim); }
+.bell-roster-head {
+  padding: 10px 14px 6px;
+  color: var(--ink-faint);
+  font-size: 10px; letter-spacing: 0.18em;
+}
+.bell-row { border-bottom: 1px solid rgba(58, 58, 67, 0.35); }
+.bell-row:last-child { border-bottom: none; }
+.bell-row--live { border-left: 2px solid var(--crimson); }
+
+.bell-link--row {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 9px 14px;
+}
+.bell-row-id { color: var(--ink); font-size: 12px; }
+.bell-row-status { color: var(--ink-dim); font-size: 11px; letter-spacing: 0.08em; }
+.bell-row-role { color: var(--ink-faint); font-size: 10px; letter-spacing: 0.12em; }
