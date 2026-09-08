@@ -10,6 +10,8 @@ Two agents negotiate a deal under private, self-committed constraints, make natu
 
 **Track:** Onchain Justice | **Built for:** GenLayer Agent Tank 2026
 
+**Deployed:** `0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A` on GenLayer Bradbury | **Audited:** 22 findings across four severities, all resolved ([security audit](docs/security-audit.md))
+
 ---
 
 ## What Carnage is
@@ -74,9 +76,16 @@ The deal price is final. GenLayer determines the label; the contract determines 
 | MISLEADING | 50% slashed to the counterparty |
 | FALSE | 100% slashed to the counterparty |
 
+A slashed portion normally crosses to the counterparty. When **both** sides
+draw an adverse label (FALSE or MISLEADING on each side), the slashed portions
+go to the protocol sink instead. Crossing them would cancel out and pay two
+liars exactly what two honest players get, which is not a penalty at all. The
+amounts in the table do not change, only the destination, and only when both
+sides lied.
+
 Stake is proportional to the deal and sized against an explicit bound defined by the match's negotiation model: within that bound, the maximum economically capturable advantage of a lie is covered by the applicable slash. There is no fair-price calculation, no causal-damage estimate, no counterfactual bargaining, and no repricing, just deterministic economic rules applied to a semantic verdict.
 
-Undetermined consensus leaves all funds locked and moves nothing. A no-reveal is a deterministic protocol violation, not a question for the judge: the non-revealer is slashed, the deal is voided, and escrow is returned, with no AI call involved.
+Undetermined consensus leaves all funds locked and moves nothing until a deadline-gated resolution returns every stake. A no-reveal is a deterministic protocol violation, not a question for the judge, and it has two outcomes. If one side fails to reveal, that side's stake is slashed to the side that did reveal. If neither side reveals, both are refunded their own stake and nothing goes to the sink: a mutual failure to reveal is a liveness problem rather than a strategy, and it is not treated as one. No AI call is involved in either case.
 
 ## Prompt injection is the first-class threat
 
@@ -114,11 +123,37 @@ The MVP is two roles, Holder and Buyer, both adversarial. A third role (Broker, 
 
 ## Status
 
-In active development during the Agent Tank build window (Sep 3-17, 2026). The design is frozen; the vertical slice is being implemented against GenLayer Bradbury. Run and demo instructions land with the vertical slice.
+The vertical slice is built, audited and running on GenLayer Bradbury.
+
+- **Contract:** deployed at `0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A`. Commit,
+  fund, anchor, price lock, reveal, adjudicate, settle and claim, plus the
+  deterministic resolution paths.
+- **Security:** a full audit was performed against an earlier deployment and
+  produced 22 findings across four severities. All 22 are resolved in the
+  deployed contract. See [docs/security-audit.md](docs/security-audit.md) for
+  the summary and [docs/resolution.md](docs/resolution.md) for how a match
+  resolves. 127 direct mode tests pass, 50 of which exist to keep the audit
+  findings closed.
+- **Fund safety:** no reachable state strands funds. Every failure state has a
+  permissionless, deadline-gated recovery that any caller can trigger, so a
+  match can never be held hostage by the party that walked away from it.
+- **Front end:** the full lifecycle from creating a match through claiming a
+  payout, including the recovery paths, in-app notifications for anything
+  needing attention, and a replay that reconstructs a match from contract state
+  with links to the transactions that prove each step.
+
+Still open: the benchmark reports no numbers yet. The metrics and the attack
+classes are defined, but no accuracy or consensus figures are claimed until the
+fixture set has actually been run. The Broker role remains out of scope for the
+MVP.
+
+Running it locally: `npm install && npm run dev` in `web/` for the front end,
+and `pip install -r requirements.txt` then `pytest tests/direct` for the
+contract test suite.
 
 ## Known limitations
 
-Carnage does not claim AI adjudication is perfect. Semantic judgments can be hard and validators can disagree; genuinely ambiguous claims resolve to AMBIGUOUS or to an undetermined outcome by design. Prompt injection remains an open target that the benchmark measures rather than declares solved. Benchmark ground truth is human-assigned and labeled as such. Economic deterrence is bounded by the match's negotiation model, and lies above that bound are reported, not silently prevented. Privacy exists only during off-chain negotiation (nothing is confidential on-chain), and the system classifies claims, not human intent.
+Carnage does not claim AI adjudication is perfect. Semantic judgments can be hard and validators can disagree; genuinely ambiguous claims resolve to AMBIGUOUS or to an undetermined outcome by design. These are limits on how confidently a claim can be judged, not on whether the money is safe: a judgment the jury cannot reach ends in a deadline-gated resolution that returns every stake, and no reachable state strands funds. Prompt injection remains an open target that the benchmark measures rather than declares solved. Benchmark ground truth is human-assigned and labeled as such. Economic deterrence is bounded by the match's negotiation model, and lies above that bound are reported, not silently prevented. Privacy exists only during off-chain negotiation (nothing is confidential on-chain), and the system classifies claims, not human intent.
 
 ---
 
