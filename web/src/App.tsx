@@ -4,6 +4,7 @@ import MatchApp from "./pages/MatchApp";
 import PostPage from "./pages/PostPage";
 import { findPost } from "./content/posts";
 import type { NavShell } from "./components/TopNav";
+import { useNotifications } from "./hooks/useNotifications";
 import { connectWallet, disconnectWallet, watchWallet } from "./chain/client";
 import { hrefFor, routeFromUrl, type Route } from "./lib/route";
 import { previewFromUrl } from "./dev/preview";
@@ -89,7 +90,13 @@ export default function App() {
     return watchWallet(setWallet);
   }, [wallet]);
 
-  const nav: NavShell = { wallet, connecting, onConnect, onDisconnect, onHome, onLaunch };
+  // One feed for the session, owned here so the bell survives navigation
+  // between the landing, a post and the app.
+  const notifications = useNotifications(wallet);
+  const nav: NavShell = {
+    wallet, connecting, onConnect, onDisconnect, onHome, onLaunch,
+    notifications, onOpenMatch,
+  };
 
   // An unknown slug is a typo or a stale link. The landing carries the list of
   // what does exist, so that is where it goes, rather than an empty shell.

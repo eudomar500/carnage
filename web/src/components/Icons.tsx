@@ -65,3 +65,12 @@ export const Vault = (p: P) => (
     <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
   </S>
 );
+
+export const Bell = (p: P) => (
+  <S {...p}>
+    <path d="M6 17.5v-6a6 6 0 0 1 12 0v6" />
+    <path d="M4.5 17.5h15" />
+    <path d="M10.2 20.3a2 2 0 0 0 3.6 0" />
+    <path d="M12 5.5V3.6" />
+  </S>
+);

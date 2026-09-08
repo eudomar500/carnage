@@ -1,4 +1,6 @@
 import type { MouseEvent } from "react";
+import NotificationBell from "./NotificationBell";
+import type { NotificationFeed } from "../hooks/useNotifications";
 import { hrefFor } from "../lib/route";
 import { shortAddress } from "../lib/format";
 
@@ -45,6 +47,13 @@ export type NavShell = {
   onHome: (hash?: string) => void;
   /** Goes from the landing into the app. */
   onLaunch: () => void;
+  /**
+   * App variant only. The bell needs both to render, and the presentation
+   * pages pass neither, so both are optional rather than forcing every caller
+   * to carry something it has no use for.
+   */
+  notifications?: NotificationFeed;
+  onOpenMatch?: (id: number) => void;
 };
 
 export type TopNavProps = NavShell & {
@@ -71,6 +80,8 @@ export default function TopNav({
   onDisconnect,
   onHome,
   onLaunch,
+  notifications,
+  onOpenMatch,
   hasReplay = false,
 }: TopNavProps) {
   const onLanding = variant === "landing";
@@ -152,6 +163,10 @@ export default function TopNav({
           </a>
         </div>
       )}
+
+      {isApp && wallet && notifications && onOpenMatch ? (
+        <NotificationBell feed={notifications} onOpenMatch={onOpenMatch} />
+      ) : null}
 
       {!isApp ? null : wallet ? (
         <span className="nav-wallet" title={wallet}>
