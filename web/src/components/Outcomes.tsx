@@ -41,11 +41,26 @@ export default function Outcomes() {
             <div key={o.key} className={`outcome-row${o.pair ? "" : " outcome-row--none"}`}>
               <span className="outcome-pair">
                 {o.pair ? (
-                  o.pair.map((label, i) => (
-                    <span key={label + String(i)} className={`outcome-label outcome-label--${label.toLowerCase()}`}>
-                      {label}
-                    </span>
-                  ))
+                  o.pair.flatMap((label, i) => {
+                    const chip = (
+                      <span key={label + String(i)} className={`outcome-label outcome-label--${label.toLowerCase()}`}>
+                        {label}
+                      </span>
+                    );
+                    // An equally-settling alternative sits beside side A,
+                    // separated by "or" rather than the "+" that joins the two
+                    // sides of a pair.
+                    if (i !== 0 || !o.alt) return [chip];
+                    return [
+                      chip,
+                      <span
+                        key={`${o.alt}-alt`}
+                        className={`outcome-label outcome-label--${o.alt.toLowerCase()} outcome-label--alt`}
+                      >
+                        {o.alt}
+                      </span>,
+                    ];
+                  })
                 ) : (
                   <span className="outcome-label outcome-label--void">NONE STORED</span>
                 )}

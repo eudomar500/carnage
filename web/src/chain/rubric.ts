@@ -138,6 +138,17 @@ export type OutcomeRow = {
    * what, and the percentages carry that answer.
    */
   title: string;
+  /**
+   * A label that settles identically to pair[0] and is therefore covered by
+   * this same row.
+   *
+   * UNSUPPORTED and AMBIGUOUS both return the full stake and slash nothing,
+   * so giving each its own row would repeat the same numbers and imply a
+   * difference that does not exist. Naming both on one row says what is true:
+   * the outcome is the same either way. It is display only, and the
+   * percentages are still computed from `pair`.
+   */
+  alt?: RubricLabel;
 };
 
 export type Outcome = {
@@ -199,6 +210,11 @@ export const OUTCOMES: OutcomeRow[] = [
   { key: "one-misleading", pair: ["MISLEADING", "TRUE"], title: "one side misleads, the other is honest" },
   { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently, neither collects" },
   { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie the same way, both forfeit to the sink" },
-  { key: "unresolvable", pair: ["AMBIGUOUS", "TRUE"], title: "no penalty on either side" },
+  {
+    key: "unresolvable",
+    pair: ["AMBIGUOUS", "TRUE"],
+    alt: "UNSUPPORTED",
+    title: "no penalty on either side",
+  },
   { key: "no-verdict", pair: null, title: "no reveal, or a jury that cannot decide" },
 ];

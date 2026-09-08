@@ -1122,6 +1122,13 @@ textarea:focus { outline: none; border-color: var(--crimson-dim); background: rg
 .outcome-pair .outcome-label + .outcome-label::before {
   content: "+"; color: var(--ink-faint); margin-right: 7px;
 }
+/*
+ * An alternative label that settles the same way joins its neighbour with
+ * "or", not the "+" that separates the two sides of a pair. Same specificity
+ * as the rule above and later in the file, so it wins for this chip only.
+ */
+.outcome-pair .outcome-label + .outcome-label--alt::before { content: "or"; }
+
 .outcome-label--true                          { color: var(--green); }
 .outcome-label--false,
 .outcome-label--misleading                    { color: var(--crimson); }
