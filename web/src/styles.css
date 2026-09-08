@@ -1086,6 +1086,78 @@ textarea:focus { outline: none; border-color: var(--crimson-dim); background: rg
   font-size: 11.5px; line-height: 1.75; color: var(--ink-dim);
 }
 
+/* ---------- how a match can end --------------------------------------- */
+
+.outcomes { margin-top: 30px; }
+.outcomes-title {
+  margin: 0 0 8px; font-weight: 500;
+  font-size: 12px; letter-spacing: 0.18em; color: var(--ink);
+}
+
+.outcome-table {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel);
+}
+
+.outcome-row {
+  display: grid;
+  grid-template-columns: 190px minmax(200px, 1fr) 178px 178px;
+  gap: 16px; align-items: baseline;
+  padding: 11px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.outcome-row:first-child { border-top: none; }
+
+.outcome-row--head {
+  font-size: 9.5px; letter-spacing: 0.18em; color: var(--ink-faint);
+  padding-top: 10px; padding-bottom: 10px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.outcome-pair {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  font-size: 10.5px; letter-spacing: 0.12em;
+}
+.outcome-pair .outcome-label + .outcome-label::before {
+  content: "+"; color: var(--ink-faint); margin-right: 7px;
+}
+.outcome-label--true                          { color: var(--green); }
+.outcome-label--false,
+.outcome-label--misleading                    { color: var(--crimson); }
+.outcome-label--ambiguous,
+.outcome-label--unsupported                   { color: var(--amber); }
+.outcome-label--void                          { color: var(--ink-faint); }
+
+.outcome-case {
+  font-size: 11.5px; line-height: 1.6; color: var(--ink);
+  letter-spacing: 0.04em;
+}
+.outcome-side { display: block; }
+.outcome-side-key {
+  display: none;
+  font-style: normal; font-size: 9px; letter-spacing: 0.18em; color: var(--ink-faint);
+}
+.outcome-num { font-weight: 500; font-size: 13px; letter-spacing: 0.04em; }
+.outcome-num--even { color: var(--ink-dim); }
+.outcome-num--down { color: var(--crimson); }
+.outcome-num--up   { color: var(--green); }
+.outcome-side-note {
+  display: block; margin-top: 4px;
+  font-style: normal; font-size: 10.5px; line-height: 1.6; color: var(--ink-faint);
+}
+
+.outcome-row--none { background: rgba(0, 0, 0, 0.18); }
+.outcome-void {
+  grid-column: 3 / -1;
+  font-size: 10.5px; line-height: 1.65; color: var(--ink-faint);
+}
+.outcome-void a {
+  color: var(--ink-dim); text-decoration: none;
+  border-bottom: 1px dotted var(--crimson-dim);
+}
+.outcome-void a:hover { color: var(--crimson); border-bottom-color: var(--crimson); }
+
 /* ---------- replay ---------------------------------------------------- */
 
 .rep-live {
@@ -1188,6 +1260,10 @@ textarea:focus { outline: none; border-color: var(--crimson-dim); background: rg
 /* ---------- reference responsive -------------------------------------- */
 
 @media (max-width: 1100px) {
+  .outcome-row { grid-template-columns: 170px minmax(160px, 1fr); }
+  .outcome-row--head span:nth-child(n + 3) { display: none; }
+  .outcome-side, .outcome-void { grid-column: 2 / -1; }
+  .outcome-side-key { display: block; margin-bottom: 3px; }
   .rubric-row { grid-template-columns: 40px 130px minmax(220px, 1fr); }
   .rubric-settle { grid-column: 2 / -1; }
   .rubric-row--head span:last-child { display: none; }
@@ -1197,6 +1273,8 @@ textarea:focus { outline: none; border-color: var(--crimson-dim); background: rg
 
 @media (max-width: 860px) {
   .appentry-grid { grid-template-columns: 1fr; }
+  .outcome-row { grid-template-columns: 1fr; gap: 10px; }
+  .outcome-side, .outcome-void { grid-column: 1 / -1; }
   .rubric-row { grid-template-columns: 34px 1fr; }
   .rubric-test, .rubric-settle { grid-column: 2 / -1; }
   .rep-sides { grid-template-columns: 1fr; }

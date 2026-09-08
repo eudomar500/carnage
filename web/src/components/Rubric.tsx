@@ -1,6 +1,7 @@
 import type { Label, MatchState } from "../chain/contract";
 import { consequenceText, RUBRIC, settlementSplit } from "../chain/rubric";
 import { formatToken, TOKEN_SYMBOL } from "../lib/format";
+import Outcomes from "./Outcomes";
 
 /** Which side of this match, if any, drew a given label. */
 function tagsFor(match: MatchState | null, label: Label): string[] {
@@ -85,6 +86,8 @@ export default function Rubric({ match }: { match: MatchState | null }) {
         written into the adjudication prompt itself. The deal price is never
         rewritten: the label picks the penalty, and that is the only lever.
       </p>
+
+      <Outcomes />
     </section>
   );
 }

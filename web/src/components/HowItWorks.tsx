@@ -66,7 +66,7 @@ export default function HowItWorks({ match }: { match: MatchState | null }) {
         })}
       </ol>
 
-      <div className="branches">
+      <div className="branches" id="no-verdict">
         <h3 className="branches-title">WHEN THERE IS NO VERDICT</h3>
         <p className="doc-lede">
           Two exits skip adjudication entirely. Neither calls GenLayer, and

@@ -112,3 +112,66 @@ export const RUBRIC: RubricRow[] = [
     note: "The fallthrough. A claim reaches TRUE only after all four adverse rules have failed to fit.",
   },
 ];
+
+/**
+ * The match-level view of the same rule.
+ *
+ * A verdict lands on each claim separately: settle() calls _settle_side once
+ * per side and credits both claimable balances from the two results. So the
+ * result of a whole match is just the two splits composed, and that is how it
+ * is computed here. Nothing in this table is written by hand; feeding both
+ * labels through settlementSplit is the only arithmetic involved.
+ */
+export type OutcomeRow = {
+  key: string;
+  /** Labels for side A and side B, or null when no verdict is ever stored. */
+  pair: [RubricLabel, RubricLabel] | null;
+  /**
+   * The scenario, named in a few words. Deliberately not a definition of the
+   * labels: that is RUBRIC's job, and repeating it here would give the reader
+   * two places to check for the same fact. This row answers who ends up with
+   * what, and the percentages carry that answer.
+   */
+  title: string;
+};
+
+export type Outcome = {
+  /** Percent of its own stake side A walks away with. */
+  a: number;
+  /** Percent of its own stake side B walks away with. */
+  b: number;
+};
+
+/**
+ * What each side ends up holding, as a percent of the stake it posted. Both
+ * sides post the same amount, so 100 is level, under 100 is a net loss, and
+ * over 100 means the other side's slashed stake came across.
+ */
+export function outcomePercents(pair: [RubricLabel, RubricLabel]): Outcome | null {
+  const a = settlementSplit(pair[0], PERCENT_BASIS);
+  const b = settlementSplit(pair[1], PERCENT_BASIS);
+  if (!a || !b) return null;
+  return {
+    a: Number(a.agent + b.counterparty),
+    b: Number(b.agent + a.counterparty),
+  };
+}
+
+/** One line for a computed percent. The number decides the wording. */
+export function outcomeEndText(percent: number): string {
+  if (percent === 0) return "loses everything it posted";
+  if (percent < 100) return `keeps ${percent}% of what it posted`;
+  if (percent === 100) return "ends level with what it posted";
+  return `its own stake plus ${percent - 100}% of the other side's`;
+}
+
+/** The combined cases, in the order a reader meets them. */
+export const OUTCOMES: OutcomeRow[] = [
+  { key: "both-honest", pair: ["TRUE", "TRUE"], title: "both honest" },
+  { key: "one-false", pair: ["FALSE", "TRUE"], title: "one side lies outright, the other is honest" },
+  { key: "one-misleading", pair: ["MISLEADING", "TRUE"], title: "one side misleads, the other is honest" },
+  { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently" },
+  { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie the same way, penalties cancel" },
+  { key: "unresolvable", pair: ["AMBIGUOUS", "TRUE"], title: "no penalty on either side" },
+  { key: "no-verdict", pair: null, title: "no reveal, or a jury that cannot decide" },
+];
