@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 import ClaimBanner from "../components/ClaimBanner";
+import MatchFlowBanner from "../components/MatchFlowBanner";
+import HowCarnageWorks from "./posts/how-carnage-works";
 import StressTestForTheJudge from "./posts/stress-test-for-the-judge";
 
 export type Post = {
@@ -23,6 +25,15 @@ export type Post = {
  * there is nothing to forget to flip and nothing half-rendered on the page.
  */
 export const POSTS: Post[] = [
+  {
+    slug: "how-carnage-works",
+    title: "How Carnage works, in plain language",
+    date: "2026-09-08",
+    summary:
+      "A plain-language walkthrough of a full match: seal a secret, write your claim, and watch the GEN follow the verdict.",
+    Banner: MatchFlowBanner,
+    Body: HowCarnageWorks,
+  },
   {
     slug: "stress-test-for-the-judge",
     title: "Why the agent economy needs a stress test for its judge",

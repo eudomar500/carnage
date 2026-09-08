@@ -1556,6 +1556,12 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .banner-label--jury { fill: var(--crimson); letter-spacing: 0.32em; }
 .banner-label--green { fill: var(--green); }
 
+.banner-sub {
+  font-family: var(--mono);
+  font-size: 9.5px; letter-spacing: 0.14em;
+  fill: var(--ink-faint);
+}
+
 .banner-formula {
   font-family: var(--mono);
   font-size: 14px; letter-spacing: 0.02em;
@@ -1629,6 +1635,36 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
   font-size: 14.5px; line-height: 1.85; color: var(--ink);
 }
 .post-body p:last-child { margin-bottom: 0; }
+
+/*
+ * Long-form with sections. The heading sits closer to the paragraph it opens
+ * than to the one it follows, so the article reads as blocks rather than an
+ * even column of text.
+ */
+.post-body h2 {
+  margin: 40px 0 18px; max-width: 74ch;
+  font-family: var(--mono); font-weight: 400;
+  font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--crimson);
+}
+.post-body h2:first-child { margin-top: 0; }
+
+.post-body ul {
+  margin: 0 0 22px; padding: 0; max-width: 74ch;
+  list-style: none;
+}
+.post-body li {
+  position: relative;
+  margin: 0 0 12px; padding-left: 22px;
+  font-size: 14.5px; line-height: 1.8; color: var(--ink);
+}
+.post-body li:last-child { margin-bottom: 0; }
+.post-body li::before {
+  content: "-";
+  position: absolute; left: 4px;
+  color: var(--crimson);
+}
+.post-body li strong { color: var(--ink); letter-spacing: 0.04em; }
 
 .post-quote {
   margin: 0 0 22px; padding: 18px 22px; max-width: 74ch;
