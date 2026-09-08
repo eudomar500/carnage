@@ -157,7 +157,7 @@ export const BRANCHES: Branch[] = [
     title: "NO REVEAL",
     method: "resolve_no_reveal",
     when: "reveal_deadline passes with at least one side still unrevealed",
-    outcome: "A missing reveal is a protocol violation, not a question for the judge. The side that did reveal takes the whole pool. If neither revealed, both stakes are forfeited to the protocol sink. No AI call is involved.",
+    outcome: "A missing reveal is a protocol violation, not a question for the judge. The side that did reveal takes the whole pool. If neither revealed, nobody beat anybody: both stakes go back to their owners, with nothing to the sink. No AI call is involved.",
     taken: (m) => m.no_reveal_resolved,
   },
   {

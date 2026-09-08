@@ -1,3 +1,4 @@
+import { isDishonest } from "./contract";
 import type { Label } from "./contract";
 
 /**
@@ -140,7 +141,21 @@ export type Outcome = {
   a: number;
   /** Percent of its own stake side B walks away with. */
   b: number;
+  /** Percent of one stake the protocol sink takes. Zero unless both lied. */
+  sink: number;
 };
+
+/**
+ * Mirrors the both_adverse branch in Carnage._apply_settlement.
+ *
+ * A slashed portion normally crosses to the counterparty. When BOTH labels
+ * are adverse it goes to the sink instead, because two liars crossing equal
+ * penalties would cancel out and pay them exactly what two honest players
+ * get. The per-label amounts are untouched: only the destination changes.
+ */
+function bothAdverse(pair: [RubricLabel, RubricLabel]): boolean {
+  return isDishonest(pair[0]) && isDishonest(pair[1]);
+}
 
 /**
  * What each side ends up holding, as a percent of the stake it posted. Both
@@ -151,9 +166,17 @@ export function outcomePercents(pair: [RubricLabel, RubricLabel]): Outcome | nul
   const a = settlementSplit(pair[0], PERCENT_BASIS);
   const b = settlementSplit(pair[1], PERCENT_BASIS);
   if (!a || !b) return null;
+  if (bothAdverse(pair)) {
+    return {
+      a: Number(a.agent),
+      b: Number(b.agent),
+      sink: Number(a.counterparty + b.counterparty),
+    };
+  }
   return {
     a: Number(a.agent + b.counterparty),
     b: Number(b.agent + a.counterparty),
+    sink: 0,
   };
 }
 
@@ -170,8 +193,8 @@ export const OUTCOMES: OutcomeRow[] = [
   { key: "both-honest", pair: ["TRUE", "TRUE"], title: "both honest" },
   { key: "one-false", pair: ["FALSE", "TRUE"], title: "one side lies outright, the other is honest" },
   { key: "one-misleading", pair: ["MISLEADING", "TRUE"], title: "one side misleads, the other is honest" },
-  { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently" },
-  { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie the same way, penalties cancel" },
+  { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently, neither collects" },
+  { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie the same way, both forfeit to the sink" },
   { key: "unresolvable", pair: ["AMBIGUOUS", "TRUE"], title: "no penalty on either side" },
   { key: "no-verdict", pair: null, title: "no reveal, or a jury that cannot decide" },
 ];

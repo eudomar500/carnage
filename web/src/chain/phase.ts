@@ -26,16 +26,21 @@ export type MatchPhase = {
   stepIndex: number;
   mood: SettleMood;
   /** Terminal resolution that bypassed adjudication entirely. */
-  terminal: "none" | "no-reveal" | "inconclusive";
+  terminal: "none" | "no-reveal" | "inconclusive" | "refunded";
   statusLabel: string;
 };
 
 export function derivePhase(m: MatchState): MatchPhase {
+  // refunded_before_lock is the third way a match ends without a verdict:
+  // it funded, never agreed a price, and the stakes went back. Without this
+  // branch such a match reads as though it were still negotiating.
   const terminal = m.no_reveal_resolved
     ? "no-reveal"
     : m.inconclusive_resolved
       ? "inconclusive"
-      : "none";
+      : m.refunded_before_lock
+        ? "refunded"
+        : "none";
 
   if (terminal !== "none") {
     return {
@@ -44,7 +49,12 @@ export function derivePhase(m: MatchState): MatchPhase {
       // Neither path is a verdict, so the judge does not strike.
       mood: "calm",
       terminal,
-      statusLabel: terminal === "no-reveal" ? "NO-REVEAL RESOLVED" : "INCONCLUSIVE",
+      statusLabel:
+        terminal === "no-reveal"
+          ? "NO-REVEAL RESOLVED"
+          : terminal === "refunded"
+            ? "REFUNDED"
+            : "INCONCLUSIVE",
     };
   }
 

@@ -51,7 +51,14 @@ export default function Outcomes() {
                 )}
               </span>
 
-              <span className="outcome-case">{o.title}</span>
+              <span className="outcome-case">
+                {o.title}
+                {split && split.sink > 0 ? (
+                  <em className="outcome-side-note">
+                    {split.sink}% of one stake goes to the protocol sink, not across
+                  </em>
+                ) : null}
+              </span>
 
               {split ? (
                 <>

@@ -48,6 +48,43 @@ export type MatchState = {
   holder_claimable: bigint;
   buyer_claimable: bigint;
   sink_claimable: bigint;
+
+  /** Protocol sink, and the address mid-handover in the two-step transfer. */
+  sink_address: string;
+  /** Zero address when no handover is pending. */
+  pending_sink: string;
+
+  /**
+   * The escrow ledger. The contract credits and pays strictly against these,
+   * so a match can never pay out more than it actually holds.
+   */
+  holder_escrow: bigint;
+  buyer_escrow: bigint;
+  escrow_total: bigint;
+  credited_total: bigint;
+  paid_total: bigint;
+
+  /**
+   * Unix seconds, NOT an ISO string like reveal_deadline and
+   * inconclusive_deadline. Past it with no locked price, anyone can refund.
+   */
+  lock_deadline: bigint;
+  refunded_before_lock: boolean;
+
+  /**
+   * How a no-reveal resolved, in the contract's own words:
+   * HOLDER_REVEALED_BUYER_SLASHED, BUYER_REVEALED_HOLDER_SLASHED or
+   * BOTH_UNREVEALED_REFUNDED. Empty until resolve_no_reveal runs.
+   */
+  no_reveal_outcome: string;
+
+  /**
+   * Whether holder_revealed_state <= deal_price <= buyer_revealed_state.
+   * Recorded once both sides reveal and never enforced: committing an
+   * incoherent constraint is allowed, it is just visible.
+   */
+  coherence_known: boolean;
+  coherent: boolean;
 };
 
 /** GenVM returns small ints as numbers and wide ones as decimal strings. */
@@ -73,6 +110,12 @@ function normalise(raw: Record<string, any>): MatchState {
     holder_claimable: big(raw.holder_claimable),
     buyer_claimable: big(raw.buyer_claimable),
     sink_claimable: big(raw.sink_claimable),
+    holder_escrow: big(raw.holder_escrow),
+    buyer_escrow: big(raw.buyer_escrow),
+    escrow_total: big(raw.escrow_total),
+    credited_total: big(raw.credited_total),
+    paid_total: big(raw.paid_total),
+    lock_deadline: big(raw.lock_deadline),
   };
 }
 
@@ -179,6 +222,29 @@ export function claimGate(m: MatchState, wallet: string | null): ClaimGate {
   if (amount === 0n) return { state: "nothing-to-claim", reason: "no balance left to claim" };
 
   return { state: "ready", amount };
+}
+
+/**
+ * The same gate for the protocol sink.
+ *
+ * The sink is credited when BOTH sides drew an adverse label: those slashed
+ * portions go to the sink rather than crossing between two liars. claim()
+ * accumulates across roles, so a wallet that is both a party and the sink
+ * withdraws both in one call, and this gate only describes the sink part.
+ */
+export function sinkClaimGate(m: MatchState, wallet: string | null): ClaimGate {
+  const resolved = m.settled || m.no_reveal_resolved || m.inconclusive_resolved;
+  if (!resolved) {
+    return { state: "not-settled", reason: "nothing is credited until the match resolves" };
+  }
+  if (!wallet) return { state: "not-a-party", reason: "connect a wallet to check the sink balance" };
+  if (m.sink_address.toLowerCase() !== wallet.toLowerCase()) {
+    return { state: "not-a-party", reason: "this wallet is not the protocol sink" };
+  }
+  if (m.sink_claimable === 0n) {
+    return { state: "nothing-to-claim", reason: "the sink has no balance in this match" };
+  }
+  return { state: "ready", amount: m.sink_claimable };
 }
 
 export type ClaimStage = "accepted" | "finalized";

@@ -48,6 +48,20 @@ const base: MatchState = {
   holder_claimable: 10_000_000_000_000_000n,
   buyer_claimable: 10_000_000_000_000_000n,
   sink_claimable: 0n,
+  sink_address: "0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53",
+  pending_sink: "0x0000000000000000000000000000000000000000",
+  holder_escrow: 10_000_000_000_000_000n,
+  buyer_escrow: 10_000_000_000_000_000n,
+  escrow_total: 20_000_000_000_000_000n,
+  credited_total: 20_000_000_000_000_000n,
+  paid_total: 0n,
+  // 15 minutes before the reveal deadline above, as the contract derives it.
+  lock_deadline: 1798674300n,
+  refunded_before_lock: false,
+  no_reveal_outcome: "",
+  // holder 650 <= deal 750 <= buyer 900.
+  coherence_known: true,
+  coherent: true,
 };
 
 export type PreviewScenario = {
