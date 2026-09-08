@@ -145,5 +145,65 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         retryLabel: "RETRY CLAIM",
         unconfirmedNote: "THE CLAIM DID NOT LAND, RETRY",
       };
+
+    case "claim_sink":
+      // Same call as claim, watching the sink's balance instead of a seat's.
+      return {
+        actionId: id,
+        windowMs: 120_000,
+        pollMs: FAST_POLL_MS,
+        landed: (m) => m.sink_claimable === 0n,
+        pendingNote: "confirming the sink claim was recorded...",
+        confirmedNote: "sink balance claimed",
+        retryLabel: "RETRY SINK CLAIM",
+        unconfirmedNote: "THE SINK CLAIM DID NOT LAND, RETRY",
+      };
+
+    case "refund_before_lock":
+      // Permissionless, so the postcondition is the flag itself rather than
+      // anything about who sent it. If another caller got there first the
+      // pre-send check sees the flag already set and spends nothing.
+      return {
+        ...base,
+        landed: (m) => m.refunded_before_lock,
+        pendingNote: "confirming the refund was recorded...",
+        confirmedNote: "stakes refunded, each side got back what it funded",
+        retryLabel: "RETRY REFUND",
+        unconfirmedNote: "THE REFUND DID NOT LAND, RETRY",
+      };
+
+    case "force_settle":
+      return {
+        ...base,
+        landed: (m) => m.settled,
+        pendingNote: "confirming settlement was applied...",
+        confirmedNote: "settlement applied from the stored labels",
+        retryLabel: "RETRY FORCE SETTLEMENT",
+        unconfirmedNote: "SETTLEMENT DID NOT LAND, RETRY",
+      };
+
+    case "propose_sink":
+      // No postcondition. The proposed address is only known at click time,
+      // and proposing the zero address to cancel would clear pending_sink
+      // rather than set it, so there is no single predicate that covers both.
+      // The console re-reads the match either way and shows what is pending.
+      return {
+        ...base,
+        pendingNote: "recording the proposal...",
+        confirmedNote: "sink transfer proposed, it moves only when accepted",
+        retryLabel: "RETRY PROPOSAL",
+        unconfirmedNote: "THE PROPOSAL DID NOT LAND, RETRY",
+      };
+
+    case "accept_sink":
+      // Accepting clears pending_sink, which is exactly the state change.
+      return {
+        ...base,
+        landed: (m) => !m.pending_sink || /^0x0+$/.test(m.pending_sink),
+        pendingNote: "confirming the handover...",
+        confirmedNote: "sink role accepted",
+        retryLabel: "RETRY ACCEPT",
+        unconfirmedNote: "THE HANDOVER DID NOT LAND, RETRY",
+      };
   }
 }

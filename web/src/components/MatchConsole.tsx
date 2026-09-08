@@ -4,12 +4,23 @@ import {
   AnchorClaimPanel,
   ClaimActionPanel,
   CommitPanel,
+  ForceSettlePanel,
   FundPanel,
   ProposePricePanel,
+  RefundBeforeLockPanel,
   RevealPanel,
+  SinkClaimPanel,
+  SinkTransferPanel,
 } from "./ActionPanels";
-import type { ClaimGate, MatchState } from "../chain/contract";
-import { deriveTurn, type ActionId, type PendingAction, type Role } from "../chain/roles";
+import { sinkClaimGate, type ClaimGate, type MatchState } from "../chain/contract";
+import {
+  deriveTurn,
+  sinkSeatOf,
+  type ActionId,
+  type PendingAction,
+  type Role,
+} from "../chain/roles";
+import { useNowSeconds } from "../hooks/useNowSeconds";
 import { shortAddress } from "../lib/format";
 
 export type MatchConsoleProps = {
@@ -67,10 +78,83 @@ function Panel({
     case "propose_price":  return <ProposePricePanel {...p} />;
     case "reveal":         return <RevealPanel {...p} />;
     case "adjudicate":     return <AdjudicatePanel {...p} />;
+    case "refund_before_lock": return <RefundBeforeLockPanel {...p} />;
+    case "force_settle":   return <ForceSettlePanel {...p} />;
     case "claim":
       return gate ? <ClaimActionPanel {...p} gate={gate} /> : null;
     default:               return null;
   }
+}
+
+/**
+ * Why the match is closed, in the contract's own terms.
+ *
+ * A resolved match offers no buttons, and a dead panel with no explanation is
+ * worse than no panel. Each of these flags is terminal: once one is set the
+ * contract refuses every reveal, adjudication, resolution and settlement, so
+ * this says which one closed the match and what it did with the money.
+ */
+function TerminalFlags({ m }: { m: MatchState }) {
+  const flags: string[] = [];
+  if (m.settled) flags.push("settled: the verdict was applied and balances credited");
+  else if (m.adjudicated) flags.push("adjudicated: a verdict is stored, settlement has not run yet");
+  if (m.no_reveal_resolved) {
+    flags.push(
+      m.no_reveal_outcome
+        ? `no_reveal_resolved: ${m.no_reveal_outcome}`
+        : "no_reveal_resolved: the reveal deadline passed with a side unrevealed",
+    );
+  }
+  if (m.inconclusive_resolved) {
+    flags.push("inconclusive_resolved: the jury never decided, both stakes went back");
+  }
+  if (m.refunded_before_lock) {
+    flags.push("refunded_before_lock: no deal price was agreed, every stake went back");
+  }
+  if (!flags.length) return null;
+
+  return (
+    <div className="console-body">
+      <p className="console-lede">
+        This match is closed. Nothing can reveal, adjudicate or resolve it
+        again, which is why those actions are not on offer.
+      </p>
+      <ul className="waiting">
+        {flags.map((f) => (
+          <li key={f}>
+            <span className="waiting-what">{f}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The refund exists before it is callable, and saying so is the point.
+ *
+ * A match that funded and then stalled is exactly the state that used to
+ * strand money. The exit is real from the moment the lock deadline passes,
+ * and until then this says when that is rather than showing a dead button.
+ */
+function RefundCountdown({ m, now }: { m: MatchState; now: number }) {
+  const funded = m.holder_funded || m.buyer_funded;
+  const resolved =
+    m.settled || m.no_reveal_resolved || m.inconclusive_resolved || m.refunded_before_lock;
+  if (!funded || m.price_locked || resolved) return null;
+  if (now > Number(m.lock_deadline)) return null;
+
+  const when = new Date(Number(m.lock_deadline) * 1000).toISOString().replace(".000Z", "Z");
+  return (
+    <div className="console-body">
+      <p className="console-lede">
+        Stakes are in escrow and the deal price is not locked. If it never
+        locks, anyone can return both stakes with refund_before_lock from{" "}
+        <strong>{when}</strong>. Each side gets back exactly what it funded,
+        with nothing slashed.
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -81,6 +165,11 @@ function Panel({
  * blocked on the counterparty.
  */
 export default function MatchConsole(p: MatchConsoleProps) {
+  // Before the early return: this component bails out for a match that does
+  // not exist yet, and a hook called after that point would change the hook
+  // count when the match appears.
+  const now = useNowSeconds();
+
   if (p.notFound || !p.match) {
     return (
       <section className="console" id="console">
@@ -94,8 +183,16 @@ export default function MatchConsole(p: MatchConsoleProps) {
   }
 
   const m = p.match;
-  const turn = deriveTurn(m, p.wallet);
+  // One clock for both the gating and the countdown line, so the refund
+  // button appears by itself the moment the lock deadline passes.
+  const turn = deriveTurn(m, p.wallet, now);
   const seatIsPlayer = turn.seat === "holder" || turn.seat === "buyer";
+
+  // The sink area is for whoever holds the protocol sink, or is mid-handover
+  // into it. A normal player never sees it.
+  const sinkSeat = sinkSeatOf(m, p.wallet);
+  const sinkGate = sinkClaimGate(m, p.wallet);
+  const showSink = sinkSeat !== null;
 
   // Claim is not part of the negotiation queue. It appears once settlement
   // has run and this seat has something to withdraw.
@@ -198,6 +295,39 @@ export default function MatchConsole(p: MatchConsoleProps) {
               <Waiting actions={turn.theirs} match={m} />
             </div>
           ) : null}
+
+          {showSink ? (
+            <div className="turn turn--mine">
+              <div className="turn-head">
+                <span className="turn-flag">PROTOCOL SINK</span>
+                <span className="turn-label">
+                  {sinkSeat === "sink" ? "YOU HOLD THE SINK" : "SINK HANDOVER PENDING TO YOU"}
+                </span>
+                <code className="turn-method">
+                  {sinkSeat === "sink" ? "propose_sink_address" : "accept_sink_address"}
+                </code>
+              </div>
+              <SinkTransferPanel
+                wallet={p.wallet!}
+                match={m}
+                role={(seatIsPlayer ? turn.seat : "holder") as Role}
+                refresh={p.onActed}
+              />
+              {sinkSeat === "sink" && sinkGate.state !== "not-a-party" ? (
+                <SinkClaimPanel
+                  wallet={p.wallet!}
+                  match={m}
+                  role={(seatIsPlayer ? turn.seat : "holder") as Role}
+                  gate={sinkGate}
+                  refresh={p.onActed}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          <RefundCountdown m={m} now={now} />
+
+          <TerminalFlags m={m} />
 
           {seatIsPlayer && !turn.mine.length && !turn.theirs.length && !turn.open.length && !showClaim ? (
             <div className="console-body">
