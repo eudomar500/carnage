@@ -3,7 +3,7 @@ import { testnetBradbury } from "genlayer-js/chains";
 import { CalldataAddress } from "genlayer-js/types";
 import type { GenLayerClient } from "genlayer-js/types";
 
-export const CARNAGE_ADDRESS = "0x77B486Def4Fc7B18D0a7Ace31Ec3A75A0E5878Fd" as const;
+export const CARNAGE_ADDRESS = "0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A" as const;
 export const CHAIN = testnetBradbury;
 export const CHAIN_ID_HEX = `0x${testnetBradbury.id.toString(16)}`;
 
