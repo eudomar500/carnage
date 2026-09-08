@@ -13,6 +13,7 @@ from conftest import (
     _capture_post_messages,
     _transfers_to,
     _emitted_events,
+    _warp,
     STAKE,
     DEADLINE,
 )
@@ -39,35 +40,38 @@ def test_resolve_inconclusive_before_deadline_rejected(direct_vm, direct_deploy,
 
 
 def test_resolve_inconclusive_requires_both_revealed(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     contract = direct_deploy("contracts/carnage.py")
     match_id = _run_to_locked_price(contract, direct_vm, direct_alice, direct_bob, direct_owner)
     # only holder reveals
     direct_vm.sender = direct_alice
     contract.reveal_holder(match_id, 650, "0x" + "11" * 16)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     with direct_vm.expect_revert("both parties must reveal before an inconclusive resolution"):
         contract.resolve_inconclusive(match_id)
 
 
 def test_resolve_inconclusive_rejected_if_adjudicated(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     contract = direct_deploy("contracts/carnage.py")
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
 
     direct_vm.mock_llm(r"(?s)minimum acceptable price.*<claim>.*</claim>", json.dumps({"label": "TRUE", "reasoning": "x"}))
     direct_vm.mock_llm(r"(?s)maximum budget.*<claim>.*</claim>", json.dumps({"label": "TRUE", "reasoning": "x"}))
     contract.adjudicate(match_id)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     with direct_vm.expect_revert("match was already adjudicated"):
         contract.resolve_inconclusive(match_id)
 
 
 def test_resolve_inconclusive_credits_both_stakes_in_full(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     captured = _capture_post_messages(direct_vm)
     contract = direct_deploy("contracts/carnage.py")
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     contract.resolve_inconclusive(match_id)
 
@@ -86,10 +90,11 @@ def test_resolve_inconclusive_credits_both_stakes_in_full(direct_vm, direct_depl
 
 
 def test_resolve_inconclusive_then_claim_pays_out_full_stake_each(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     contract = direct_deploy("contracts/carnage.py")
     alice, bob = _addr(direct_alice), _addr(direct_bob)
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
     contract.resolve_inconclusive(match_id)
 
     captured = _capture_post_messages(direct_vm)
@@ -109,9 +114,10 @@ def test_resolve_inconclusive_then_claim_pays_out_full_stake_each(direct_vm, dir
 
 
 def test_resolve_inconclusive_is_permissionless(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner, direct_charlie):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     contract = direct_deploy("contracts/carnage.py")
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     direct_vm.sender = direct_charlie
     contract.resolve_inconclusive(match_id)  # does not raise
@@ -121,9 +127,10 @@ def test_resolve_inconclusive_is_permissionless(direct_vm, direct_deploy, direct
 
 
 def test_resolve_inconclusive_twice_rejected(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     contract = direct_deploy("contracts/carnage.py")
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     contract.resolve_inconclusive(match_id)
     with direct_vm.expect_revert("inconclusive resolution already applied"):
@@ -131,11 +138,12 @@ def test_resolve_inconclusive_twice_rejected(direct_vm, direct_deploy, direct_al
 
 
 def test_resolve_inconclusive_emits_event(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
-    direct_vm.warp(AFTER_INCONCLUSIVE_DEADLINE)
+    direct_vm.warp(BEFORE_INCONCLUSIVE_DEADLINE)
     captured = _capture_post_messages(direct_vm)
     contract = direct_deploy("contracts/carnage.py")
     alice, bob = _addr(direct_alice), _addr(direct_bob)
     match_id = _run_to_revealed(contract, direct_vm, direct_alice, direct_bob, direct_owner)
+    _warp(direct_vm, AFTER_INCONCLUSIVE_DEADLINE)
 
     contract.resolve_inconclusive(match_id)
 

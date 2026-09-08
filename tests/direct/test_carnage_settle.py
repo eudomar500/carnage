@@ -10,6 +10,7 @@ from conftest import (
     _reveal_both,
     _run_to_revealed,
     _capture_post_messages,
+    _post_messages,
     _contract_self_address,
     _transfers_to,
     STAKE,
@@ -59,7 +60,7 @@ def test_settle_emits_no_transfers_only_state(direct_vm, direct_deploy, direct_a
     captured = _capture_post_messages(direct_vm)
     _settle_as_self(contract, direct_vm, match_id)
 
-    assert captured == []
+    assert _post_messages(captured) == []
 
 
 # ---- gating -------------------------------------------------------------
@@ -161,9 +162,13 @@ def test_settle_both_adverse_labels_slash_independently(direct_vm, direct_deploy
     _settle_as_self(contract, direct_vm, match_id)
 
     m = contract.get_match(match_id)
-    # Holder's FALSE: full stake to buyer. Buyer's MISLEADING: half to holder, half to buyer.
-    assert m["holder_claimable"] == STAKE // 2
-    assert m["buyer_claimable"] == STAKE + STAKE // 2
+    # Both labels are adverse, so neither slash crosses to the other side.
+    # Holder's FALSE forfeits its whole stake, buyer's MISLEADING forfeits
+    # half, and both forfeited portions go to the sink.
+    assert m["holder_claimable"] == 0
+    assert m["buyer_claimable"] == STAKE - STAKE // 2
+    assert m["sink_claimable"] == STAKE + STAKE // 2
+    assert m["credited_total"] == m["escrow_total"] == STAKE * 2
 
 
 def test_settle_conserves_odd_stake_with_no_rounding_leak(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
@@ -238,8 +243,9 @@ def test_claim_is_a_single_finalized_transfer_to_the_caller(direct_vm, direct_de
     direct_vm.sender = alice
     contract.claim(match_id)
 
-    assert len(captured) == 1
-    pm = captured[0]["PostMessage"]
+    messages = _post_messages(captured)
+    assert len(messages) == 1
+    pm = messages[0]
     assert pm["address"] == alice
     assert pm["value"] == STAKE
     assert pm["calldata"] == {}

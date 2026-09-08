@@ -7,9 +7,33 @@ ERROR_EXPECTED = "[EXPECTED]"
 ERROR_LLM = "[LLM_ERROR]"
 
 MIN_SALT_BYTES = 16
+MAX_SALT_BYTES = 64
 MAX_CLAIM_CHARS = 2000
 
+# Protocol ceilings. The stake cap keeps every credit and every sum of two
+# stakes far inside u256, so no arithmetic in settlement can overflow.
+MAX_STAKE = (1 << 128) - 1
+MAX_PRICE = (1 << 128) - 1
+
+# The negotiation phase has to end early enough that the reveal phase is
+# actually winnable. lock_deadline is derived as reveal_deadline minus this
+# window, so a locked match always has at least this long to reveal.
+MIN_REVEAL_WINDOW_SECONDS = 900
+
+# force_settle() is the fallback for a scheduled settle that never ran. The
+# grace period must comfortably exceed the appeal window, so the normal
+# finalized self-call always gets there first on a healthy chain.
+SETTLE_GRACE_SECONDS = 7200
+
 LABELS = ("FALSE", "MISLEADING", "AMBIGUOUS", "UNSUPPORTED", "TRUE")
+
+# Labels that cost the party who earned them. Used only to decide where a
+# slashed portion goes, never to change how much is slashed.
+ADVERSE_LABELS = ("FALSE", "MISLEADING")
+
+# The empty value for pending_sink. Nobody holds the key to it, which is the
+# whole point: it can be a placeholder but never an owner.
+ZERO_ADDRESS = Address(b"\x00" * 20)
 
 ROLE_STATE_LABEL = {
     "holder": "minimum acceptable price (the lowest price this party would truly accept)",
@@ -37,6 +61,30 @@ class MatchInconclusiveRefunded(gl.Event):
     def __init__(self, match_id: u256, /, **blob): ...
 
 
+class MatchNoRevealResolved(gl.Event):
+    def __init__(self, match_id: u256, /, **blob): ...
+
+
+class MatchRefundedBeforeLock(gl.Event):
+    def __init__(self, match_id: u256, /, **blob): ...
+
+
+class MatchSettled(gl.Event):
+    def __init__(self, match_id: u256, /, **blob): ...
+
+
+class MatchClaimed(gl.Event):
+    def __init__(self, match_id: u256, /, **blob): ...
+
+
+class SinkTransferProposed(gl.Event):
+    def __init__(self, pending_sink: Address, /, **blob): ...
+
+
+class SinkTransferAccepted(gl.Event):
+    def __init__(self, new_sink: Address, /, **blob): ...
+
+
 @allow_storage
 @dataclass
 class Match:
@@ -49,6 +97,13 @@ class Match:
     reveal_deadline: str
     inconclusive_deadline: str
 
+    # Deadlines are parsed and validated once, at creation, and stored as
+    # Unix seconds. Every later check compares integers, so no resolution
+    # path can fail on a string that turns out to be unparseable or naive.
+    reveal_deadline_ts: u256
+    inconclusive_deadline_ts: u256
+    lock_deadline_ts: u256
+
     holder_commitment: str
     buyer_commitment: str
     holder_committed: bool
@@ -56,6 +111,13 @@ class Match:
 
     holder_funded: bool
     buyer_funded: bool
+    # What each side actually paid in, and the running totals that make
+    # over-crediting and over-paying impossible.
+    holder_escrow: u256
+    buyer_escrow: u256
+    escrow_total: u256
+    credited_total: u256
+    paid_total: u256
 
     holder_claim: str
     buyer_claim: str
@@ -68,21 +130,29 @@ class Match:
     buyer_proposed_price_set: bool
     deal_price: u256
     price_locked: bool
+    price_locked_at: u256
 
     holder_revealed_state: u256
     buyer_revealed_state: u256
     holder_revealed: bool
     buyer_revealed: bool
 
+    # Recorded, never enforced. See _record_coherence.
+    coherence_known: bool
+    coherent: bool
+
     holder_label: str
     buyer_label: str
     holder_reasoning: str
     buyer_reasoning: str
     adjudicated: bool
+    adjudicated_at: u256
     settled: bool
 
     no_reveal_resolved: bool
+    no_reveal_outcome: str
     inconclusive_resolved: bool
+    refunded_before_lock: bool
 
     holder_claimable: u256
     buyer_claimable: u256
@@ -93,6 +163,36 @@ def _parse_ts(ts: str):
     from datetime import datetime
 
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def _parse_ts_checked(ts: str, field: str):
+    """Parse an ISO 8601 timestamp, rejecting anything a later comparison
+    could choke on.
+
+    A string without an offset parses to a naive datetime, which raises
+    TypeError the moment it is compared with the block timestamp. That used
+    to happen inside the resolution paths, where an uncaught exception meant
+    the match had no deterministic exit at all. Everything is checked here,
+    once, at creation.
+    """
+    try:
+        parsed = _parse_ts(ts)
+    except (ValueError, TypeError):
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} {field} is not a valid ISO 8601 timestamp")
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise gl.vm.UserError(
+            f"{ERROR_EXPECTED} {field} must carry a timezone offset, for example 2026-12-31T00:00:00Z"
+        )
+    return parsed
+
+
+def _unix(parsed) -> int:
+    return int(parsed.timestamp())
+
+
+def _now_ts() -> int:
+    """Block time as Unix seconds. The runtime always supplies an offset."""
+    return _unix(_parse_ts_checked(gl.message_raw["datetime"], "block timestamp"))
 
 
 def _build_adjudication_prompt(role: str, revealed_state: int, claim: str) -> str:
@@ -132,12 +232,53 @@ class Carnage(gl.Contract):
     next_match_id: u256
     matches: TreeMap[u256, Match]
     sink_address: Address
+    pending_sink: Address
 
     def __init__(self):
         self.next_match_id = u256(1)
-        # Protocol sink for mutual no-reveal forfeitures (spec 9.3, case B).
-        # Defaults to the deployer so the constructor stays argument-free.
+        # Protocol sink for slashed portions when both sides drew an adverse
+        # label. It starts as the deployer so the constructor stays
+        # argument-free; the two-step transfer below is meant to be run once,
+        # right after deploy, so the sink is an explicit choice rather than an
+        # accident of who sent the deployment.
         self.sink_address = gl.message.sender_address
+        self.pending_sink = ZERO_ADDRESS
+
+    # ---- sink handover (two steps, never one) -----------------------------
+
+    @gl.public.write
+    def propose_sink_address(self, new_sink: Address) -> None:
+        """Step one of a two-step handover. The role does not move here.
+
+        The sink accumulates the slashed portions of every both-lie
+        settlement, so handing it to a mistyped or unowned address would burn
+        that balance permanently. Nothing changes until the proposed address
+        claims the role itself with accept_sink_address(), which an address
+        nobody controls can never do.
+
+        A later proposal replaces an earlier one, and proposing the zero
+        address cancels a pending handover outright.
+        """
+        self._require_no_value()
+        self._require_sender(self.sink_address)
+        self.pending_sink = new_sink
+        SinkTransferProposed(new_sink, current_sink=self.sink_address).emit()
+
+    @gl.public.write
+    def accept_sink_address(self) -> None:
+        """Step two, sent by the proposed address itself."""
+        self._require_no_value()
+        if self.pending_sink == ZERO_ADDRESS:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} no sink transfer is pending")
+        if gl.message.sender_address != self.pending_sink:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} sender is not the pending sink")
+
+        previous = self.sink_address
+        self.sink_address = self.pending_sink
+        # Cleared so the same acceptance cannot be replayed to take the role
+        # back after a later handover.
+        self.pending_sink = ZERO_ADDRESS
+        SinkTransferAccepted(self.sink_address, previous_sink=previous).emit()
 
     # ---- match creation ----------------------------------------------
 
@@ -152,17 +293,34 @@ class Carnage(gl.Contract):
         reveal_deadline: str,
         inconclusive_deadline: str,
     ) -> u256:
+        self._require_no_value()
         if holder == buyer:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} holder and buyer must differ")
         if price_floor <= 0:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} price_floor must be positive")
         if price_ceil <= price_floor:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} price_ceil must exceed price_floor")
+        if price_ceil > MAX_PRICE:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} price_ceil exceeds the protocol maximum")
         if stake_amount <= 0:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} stake_amount must be positive")
-        if _parse_ts(inconclusive_deadline) <= _parse_ts(reveal_deadline):
+        if stake_amount > MAX_STAKE:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} stake_amount exceeds the protocol maximum")
+
+        reveal_ts = _unix(_parse_ts_checked(reveal_deadline, "reveal_deadline"))
+        inconclusive_ts = _unix(_parse_ts_checked(inconclusive_deadline, "inconclusive_deadline"))
+        if inconclusive_ts <= reveal_ts:
             raise gl.vm.UserError(
                 f"{ERROR_EXPECTED} inconclusive_deadline must be after reveal_deadline"
+            )
+
+        # The price has to lock a full reveal window before the reveal
+        # deadline. Requiring that window to still be ahead of us covers both
+        # deadlines being in the future and the reveal phase being winnable.
+        lock_ts = reveal_ts - MIN_REVEAL_WINDOW_SECONDS
+        if lock_ts <= _now_ts():
+            raise gl.vm.UserError(
+                f"{ERROR_EXPECTED} reveal_deadline must be more than {MIN_REVEAL_WINDOW_SECONDS} seconds in the future"
             )
 
         match_id = self.next_match_id
@@ -177,12 +335,20 @@ class Carnage(gl.Contract):
             stake_amount=stake_amount,
             reveal_deadline=reveal_deadline,
             inconclusive_deadline=inconclusive_deadline,
+            reveal_deadline_ts=u256(reveal_ts),
+            inconclusive_deadline_ts=u256(inconclusive_ts),
+            lock_deadline_ts=u256(lock_ts),
             holder_commitment="",
             buyer_commitment="",
             holder_committed=False,
             buyer_committed=False,
             holder_funded=False,
             buyer_funded=False,
+            holder_escrow=u256(0),
+            buyer_escrow=u256(0),
+            escrow_total=u256(0),
+            credited_total=u256(0),
+            paid_total=u256(0),
             holder_claim="",
             buyer_claim="",
             holder_claimed=False,
@@ -193,18 +359,24 @@ class Carnage(gl.Contract):
             buyer_proposed_price_set=False,
             deal_price=u256(0),
             price_locked=False,
+            price_locked_at=u256(0),
             holder_revealed_state=u256(0),
             buyer_revealed_state=u256(0),
             holder_revealed=False,
             buyer_revealed=False,
+            coherence_known=False,
+            coherent=False,
             holder_label="",
             buyer_label="",
             holder_reasoning="",
             buyer_reasoning="",
             adjudicated=False,
+            adjudicated_at=u256(0),
             settled=False,
             no_reveal_resolved=False,
+            no_reveal_outcome="",
             inconclusive_resolved=False,
+            refunded_before_lock=False,
             holder_claimable=u256(0),
             buyer_claimable=u256(0),
             sink_claimable=u256(0),
@@ -215,6 +387,7 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def commit_holder(self, match_id: u256, commitment: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.holder)
         if m.holder_committed:
@@ -224,6 +397,7 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def commit_buyer(self, match_id: u256, commitment: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.buyer)
         if m.buyer_committed:
@@ -243,6 +417,10 @@ class Carnage(gl.Contract):
         if gl.message.value != m.stake_amount:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} holder must fund exactly stake_amount")
         m.holder_funded = True
+        # Record what actually arrived, not what was promised. Every later
+        # credit is bounded by the sum of these two numbers.
+        m.holder_escrow = u256(gl.message.value)
+        m.escrow_total = u256(m.escrow_total + gl.message.value)
 
     @gl.public.write.payable
     def fund_buyer(self, match_id: u256) -> None:
@@ -254,11 +432,14 @@ class Carnage(gl.Contract):
         if gl.message.value != m.stake_amount:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} buyer must fund exactly stake_amount")
         m.buyer_funded = True
+        m.buyer_escrow = u256(gl.message.value)
+        m.escrow_total = u256(m.escrow_total + gl.message.value)
 
     # ---- claim anchoring ---------------------------------------------------
 
     @gl.public.write
     def anchor_claim_holder(self, match_id: u256, claim: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.holder)
         self._require_both_funded(m)
@@ -269,6 +450,7 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def anchor_claim_buyer(self, match_id: u256, claim: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.buyer)
         self._require_both_funded(m)
@@ -281,11 +463,13 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def propose_price_holder(self, match_id: u256, price: u256) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.holder)
         self._require_both_claimed(m)
         if m.price_locked:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} deal price already locked")
+        self._require_lock_window_open(m)
         self._validate_price(m, price)
         m.holder_proposed_price = price
         m.holder_proposed_price_set = True
@@ -293,11 +477,13 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def propose_price_buyer(self, match_id: u256, price: u256) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.buyer)
         self._require_both_claimed(m)
         if m.price_locked:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} deal price already locked")
+        self._require_lock_window_open(m)
         self._validate_price(m, price)
         m.buyer_proposed_price = price
         m.buyer_proposed_price_set = True
@@ -307,9 +493,12 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def reveal_holder(self, match_id: u256, state: u256, salt: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.holder)
         self._require_price_locked(m)
+        self._require_not_resolved(m)
+        self._require_reveal_window_open(m)
         if m.holder_revealed:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} holder already revealed")
         computed = self.compute_commitment(state, salt, match_id, m.holder)
@@ -317,12 +506,16 @@ class Carnage(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} reveal does not match commitment")
         m.holder_revealed_state = state
         m.holder_revealed = True
+        self._record_coherence(m)
 
     @gl.public.write
     def reveal_buyer(self, match_id: u256, state: u256, salt: str) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_sender(m.buyer)
         self._require_price_locked(m)
+        self._require_not_resolved(m)
+        self._require_reveal_window_open(m)
         if m.buyer_revealed:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} buyer already revealed")
         computed = self.compute_commitment(state, salt, match_id, m.buyer)
@@ -330,15 +523,18 @@ class Carnage(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} reveal does not match commitment")
         m.buyer_revealed_state = state
         m.buyer_revealed = True
+        self._record_coherence(m)
 
     # ---- adjudication -----------------------------------------------------
 
     @gl.public.write
     def adjudicate(self, match_id: u256) -> dict:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_both_revealed(m)
         if m.adjudicated:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} match already adjudicated")
+        self._require_not_resolved(m)
 
         holder_result = self._adjudicate_claim(
             role="holder", revealed_state=m.holder_revealed_state, claim=m.holder_claim
@@ -352,11 +548,13 @@ class Carnage(gl.Contract):
         m.buyer_label = buyer_result["label"]
         m.buyer_reasoning = buyer_result["reasoning"]
         m.adjudicated = True
+        m.adjudicated_at = u256(_now_ts())
 
         # Settlement must wait for the appeal window to close. The contract
         # cannot check its own finality, so it schedules the settle call to
         # run only once this transaction is finalized, instead of settling
-        # here directly.
+        # here directly. force_settle() covers the case where that scheduled
+        # message never arrives.
         gl.get_contract_at(self.address).emit(on="finalized").settle(match_id)
 
         return {"holder_label": m.holder_label, "buyer_label": m.buyer_label}
@@ -383,38 +581,54 @@ class Carnage(gl.Contract):
 
     @gl.public.write
     def resolve_no_reveal(self, match_id: u256) -> str:
+        self._require_no_value()
         m = self._get_match(match_id)
         self._require_price_locked(m)
         if m.no_reveal_resolved:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} no-reveal already resolved")
+        self._require_not_resolved(m)
         if m.holder_revealed and m.buyer_revealed:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} both parties already revealed")
-        if _parse_ts(gl.message_raw["datetime"]) < _parse_ts(m.reveal_deadline):
+        if _now_ts() <= int(m.reveal_deadline_ts):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} reveal deadline has not passed yet")
 
         m.no_reveal_resolved = True
-        double_stake = u256(m.stake_amount * 2)
 
         if m.holder_revealed:
             # Case A: buyer never revealed. Buyer's stake is slashed to the
-            # holder; the holder's own stake is returned. One claimable credit
-            # nets both.
-            m.holder_claimable = u256(m.holder_claimable + double_stake)
+            # holder; the holder's own stake is returned. Two separate
+            # credits, so nothing here multiplies a stake.
+            self._credit(m, "holder", m.holder_escrow)
+            self._credit(m, "holder", m.buyer_escrow)
             outcome = "HOLDER_REVEALED_BUYER_SLASHED"
         elif m.buyer_revealed:
-            m.buyer_claimable = u256(m.buyer_claimable + double_stake)
+            self._credit(m, "buyer", m.buyer_escrow)
+            self._credit(m, "buyer", m.holder_escrow)
             outcome = "BUYER_REVEALED_HOLDER_SLASHED"
         else:
-            # Case B: neither revealed. Both stakes are forfeited to the sink.
-            m.sink_claimable = u256(m.sink_claimable + double_stake)
-            outcome = "BOTH_FORFEITED"
+            # Case B: neither revealed. Nobody beat anybody, and a mutual
+            # failure to reveal is usually a liveness problem rather than a
+            # strategy. Both sides get their own stake back.
+            self._credit(m, "holder", m.holder_escrow)
+            self._credit(m, "buyer", m.buyer_escrow)
+            outcome = "BOTH_UNREVEALED_REFUNDED"
 
+        m.no_reveal_outcome = outcome
+        MatchNoRevealResolved(
+            match_id,
+            outcome=outcome,
+            holder=m.holder,
+            buyer=m.buyer,
+            holder_claimable=m.holder_claimable,
+            buyer_claimable=m.buyer_claimable,
+        ).emit()
         return outcome
 
     # ---- inconclusive (persistent no-consensus, no GenLayer call) ----------
 
     @gl.public.write
     def resolve_inconclusive(self, match_id: u256) -> None:
+        self._require_no_value()
         m = self._get_match(match_id)
         if not (m.holder_revealed and m.buyer_revealed):
             raise gl.vm.UserError(
@@ -424,7 +638,8 @@ class Carnage(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} match was already adjudicated")
         if m.inconclusive_resolved:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} inconclusive resolution already applied")
-        if _parse_ts(gl.message_raw["datetime"]) < _parse_ts(m.inconclusive_deadline):
+        self._require_not_resolved(m)
+        if _now_ts() <= int(m.inconclusive_deadline_ts):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} inconclusive_deadline has not passed yet")
 
         m.inconclusive_resolved = True
@@ -435,8 +650,8 @@ class Carnage(gl.Contract):
         # decide by the deadline, nobody is punished: each side gets its own
         # stake back as a claimable credit, no slash, no counterparty
         # transfer, no sink.
-        m.holder_claimable = u256(m.holder_claimable + m.stake_amount)
-        m.buyer_claimable = u256(m.buyer_claimable + m.stake_amount)
+        self._credit(m, "holder", m.holder_escrow)
+        self._credit(m, "buyer", m.buyer_escrow)
 
         MatchInconclusiveRefunded(
             match_id,
@@ -445,10 +660,48 @@ class Carnage(gl.Contract):
             stake_amount=m.stake_amount,
         ).emit()
 
+    # ---- pre-lock abandonment ---------------------------------------------
+
+    @gl.public.write
+    def refund_before_lock(self, match_id: u256) -> None:
+        """Permissionless exit for a match that never reached a deal price.
+
+        Everything from funding up to the price lock used to be a dead end:
+        one side goes quiet and the stakes sit in escrow with no path out.
+        Once the lock deadline passes with no locked price, anyone can return
+        each side exactly what it put in. Nobody is at fault here, so nothing
+        is slashed and nothing goes to the sink.
+        """
+        self._require_no_value()
+        m = self._get_match(match_id)
+        if m.price_locked:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} deal price is already locked")
+        if m.refunded_before_lock:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match was already refunded")
+        self._require_not_resolved(m)
+        if _now_ts() <= int(m.lock_deadline_ts):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} lock deadline has not passed yet")
+
+        m.refunded_before_lock = True
+        self._credit(m, "holder", m.holder_escrow)
+        self._credit(m, "buyer", m.buyer_escrow)
+
+        MatchRefundedBeforeLock(
+            match_id,
+            holder=m.holder,
+            buyer=m.buyer,
+            holder_refund=m.holder_escrow,
+            buyer_refund=m.buyer_escrow,
+        ).emit()
+
     # ---- settlement ---------------------------------------------------------
 
     @gl.public.write
     def settle(self, match_id: u256) -> None:
+        # No _require_no_value() here on purpose. The sender check below
+        # already limits this to the contract's own scheduled call, which
+        # never carries value, and a revert on this path would hold up the
+        # payout until the force_settle grace period expires.
         m = self._get_match(match_id)
         if gl.message.sender_address != self.address:
             raise gl.vm.UserError(
@@ -459,6 +712,31 @@ class Carnage(gl.Contract):
         if m.settled:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} match already settled")
 
+        self._apply_settlement(m, forced=False)
+
+    @gl.public.write
+    def force_settle(self, match_id: u256) -> None:
+        """Permissionless fallback for a verdict that never got paid out.
+
+        settle() only runs as the finalized self-call adjudicate() schedules.
+        If that message never arrives, the labels are already on the match but
+        nothing can apply them, and every other resolver refuses an
+        adjudicated match. After the grace period anyone can push the same
+        settlement through. The grace period is long enough that the normal
+        path always wins the race on a healthy chain.
+        """
+        self._require_no_value()
+        m = self._get_match(match_id)
+        if not m.adjudicated:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match has not been adjudicated")
+        if m.settled:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match already settled")
+        if _now_ts() <= int(m.adjudicated_at) + SETTLE_GRACE_SECONDS:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} settle grace period has not passed yet")
+
+        self._apply_settlement(m, forced=True)
+
+    def _apply_settlement(self, m: Match, *, forced: bool) -> None:
         m.settled = True
 
         # No transfers here. This runs only via the finalized self-call
@@ -468,10 +746,44 @@ class Carnage(gl.Contract):
         # second appeal-window wait behind the first. Credit claimable
         # balances instead; each agent triggers their own single transfer
         # via claim().
-        self._settle_side(m, agent_is_holder=True, label=m.holder_label, stake=m.stake_amount)
-        self._settle_side(m, agent_is_holder=False, label=m.buyer_label, stake=m.stake_amount)
+        #
+        # When both sides drew an adverse label the slashed halves would
+        # otherwise cross and cancel, which pays two liars exactly what two
+        # honest players get. In that case only, the slashed portion goes to
+        # the sink instead of to a counterparty who also lied. Single-liar
+        # and clean outcomes are untouched: the amounts are identical and the
+        # slash still lands on the honest counterparty.
+        both_adverse = (
+            m.holder_label in ADVERSE_LABELS and m.buyer_label in ADVERSE_LABELS
+        )
+        self._settle_side(
+            m, agent_is_holder=True, label=m.holder_label, stake=m.stake_amount,
+            cross_to_sink=both_adverse,
+        )
+        self._settle_side(
+            m, agent_is_holder=False, label=m.buyer_label, stake=m.stake_amount,
+            cross_to_sink=both_adverse,
+        )
 
-    def _settle_side(self, m: Match, *, agent_is_holder: bool, label: str, stake: u256) -> None:
+        MatchSettled(
+            m.match_id,
+            forced=forced,
+            holder_label=m.holder_label,
+            buyer_label=m.buyer_label,
+            holder_claimable=m.holder_claimable,
+            buyer_claimable=m.buyer_claimable,
+            sink_claimable=m.sink_claimable,
+        ).emit()
+
+    def _settle_side(
+        self,
+        m: Match,
+        *,
+        agent_is_holder: bool,
+        label: str,
+        stake: u256,
+        cross_to_sink: bool = False,
+    ) -> None:
         if label in ("TRUE", "AMBIGUOUS", "UNSUPPORTED"):
             agent_amount, counterparty_amount = stake, u256(0)
         elif label == "MISLEADING":
@@ -485,36 +797,52 @@ class Carnage(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} unknown label at settlement: {label}")
 
         if agent_is_holder:
-            m.holder_claimable = u256(m.holder_claimable + agent_amount)
-            m.buyer_claimable = u256(m.buyer_claimable + counterparty_amount)
+            self._credit(m, "holder", agent_amount)
+            self._credit(m, "sink" if cross_to_sink else "buyer", counterparty_amount)
         else:
-            m.buyer_claimable = u256(m.buyer_claimable + agent_amount)
-            m.holder_claimable = u256(m.holder_claimable + counterparty_amount)
+            self._credit(m, "buyer", agent_amount)
+            self._credit(m, "sink" if cross_to_sink else "holder", counterparty_amount)
 
     # ---- claim ---------------------------------------------------------------
 
     @gl.public.write
     def claim(self, match_id: u256) -> u256:
+        self._require_no_value()
         m = self._get_match(match_id)
         sender = gl.message.sender_address
 
+        # Independent checks, not a first-match-wins chain: an address can be
+        # both a party and the sink, and it is owed both.
+        amount = 0
+        matched_role = False
         if sender == m.holder:
-            amount = m.holder_claimable
+            matched_role = True
+            amount += int(m.holder_claimable)
             m.holder_claimable = u256(0)
-        elif sender == m.buyer:
-            amount = m.buyer_claimable
+        if sender == m.buyer:
+            matched_role = True
+            amount += int(m.buyer_claimable)
             m.buyer_claimable = u256(0)
-        elif sender == self.sink_address:
-            amount = m.sink_claimable
+        if sender == self.sink_address:
+            matched_role = True
+            amount += int(m.sink_claimable)
             m.sink_claimable = u256(0)
-        else:
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} sender has nothing claimable in this match")
 
+        if not matched_role:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} sender has nothing claimable in this match")
         if amount == 0:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} nothing claimable for sender in this match")
 
-        self._pay(sender, amount)
-        return amount
+        # A match can never pay out more than it holds. Balances are pooled
+        # across matches, so without this a credit bug in one match would be
+        # funded by another match's escrow.
+        if int(m.paid_total) + amount > int(m.escrow_total):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} payout would exceed the match escrow")
+        m.paid_total = u256(int(m.paid_total) + amount)
+
+        self._pay(sender, u256(amount))
+        MatchClaimed(match_id, recipient=sender, amount=u256(amount)).emit()
+        return u256(amount)
 
     def _pay(self, recipient: Address, amount: u256) -> None:
         if amount == 0:
@@ -527,6 +855,13 @@ class Carnage(gl.Contract):
     def compute_commitment(
         self, state: u256, salt: str, match_id: u256, agent: Address
     ) -> str:
+        """Verification helper. The contract calls this itself on reveal.
+
+        Callers should hash client-side instead of calling this view with a
+        secret they have not committed yet: the arguments travel to whichever
+        node serves the read, so calling it with a live (state, salt) pair
+        hands the preimage to that node before the commitment is on-chain.
+        """
         salt_bytes = self._decode_salt(salt)
         buf = bytearray()
         buf += int(state).to_bytes(32, "big")
@@ -545,6 +880,8 @@ class Carnage(gl.Contract):
             "match_id": m.match_id,
             "holder": m.holder.as_hex,
             "buyer": m.buyer.as_hex,
+            "sink_address": self.sink_address.as_hex,
+            "pending_sink": self.pending_sink.as_hex,
             "price_floor": m.price_floor,
             "price_ceil": m.price_ceil,
             "stake_amount": m.stake_amount,
@@ -553,6 +890,11 @@ class Carnage(gl.Contract):
             "buyer_committed": m.buyer_committed,
             "holder_funded": m.holder_funded,
             "buyer_funded": m.buyer_funded,
+            "holder_escrow": m.holder_escrow,
+            "buyer_escrow": m.buyer_escrow,
+            "escrow_total": m.escrow_total,
+            "credited_total": m.credited_total,
+            "paid_total": m.paid_total,
             "holder_claim": m.holder_claim,
             "buyer_claim": m.buyer_claim,
             "holder_claimed": m.holder_claimed,
@@ -561,10 +903,13 @@ class Carnage(gl.Contract):
             "buyer_proposed_price": m.buyer_proposed_price,
             "deal_price": m.deal_price,
             "price_locked": m.price_locked,
+            "lock_deadline": m.lock_deadline_ts,
             "holder_revealed": m.holder_revealed,
             "buyer_revealed": m.buyer_revealed,
             "holder_revealed_state": m.holder_revealed_state,
             "buyer_revealed_state": m.buyer_revealed_state,
+            "coherence_known": m.coherence_known,
+            "coherent": m.coherent,
             "adjudicated": m.adjudicated,
             "settled": m.settled,
             "holder_label": m.holder_label,
@@ -572,8 +917,10 @@ class Carnage(gl.Contract):
             "holder_reasoning": m.holder_reasoning,
             "buyer_reasoning": m.buyer_reasoning,
             "no_reveal_resolved": m.no_reveal_resolved,
+            "no_reveal_outcome": m.no_reveal_outcome,
             "inconclusive_deadline": m.inconclusive_deadline,
             "inconclusive_resolved": m.inconclusive_resolved,
+            "refunded_before_lock": m.refunded_before_lock,
             "holder_claimable": m.holder_claimable,
             "buyer_claimable": m.buyer_claimable,
             "sink_claimable": m.sink_claimable,
@@ -589,6 +936,15 @@ class Carnage(gl.Contract):
     def _require_sender(self, expected: Address) -> None:
         if gl.message.sender_address != expected:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} sender is not authorized for this role")
+
+    def _require_no_value(self) -> None:
+        """Nothing but fund_holder and fund_buyer may carry value.
+
+        Value arriving anywhere else would land in the pooled balance with no
+        claimable credit behind it, which is unrecoverable.
+        """
+        if gl.message.value != 0:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} this method does not accept value")
 
     def _require_both_committed(self, m: Match) -> None:
         if not (m.holder_committed and m.buyer_committed):
@@ -614,6 +970,77 @@ class Carnage(gl.Contract):
                 f"{ERROR_EXPECTED} both parties must reveal before adjudication"
             )
 
+    def _require_not_resolved(self, m: Match) -> None:
+        """One terminal state, checked from every path that could add to it.
+
+        Each resolver used to read only its own flag, so a second resolver
+        could run after the first and credit the same escrow twice. These four
+        flags are now a single door: once any of them is set the match is
+        finished, and nothing may reveal, adjudicate, settle or resolve again.
+        """
+        if m.adjudicated or m.settled:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match has already been adjudicated")
+        if m.no_reveal_resolved:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match was already resolved as a no-reveal")
+        if m.inconclusive_resolved:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match was already resolved as inconclusive")
+        if m.refunded_before_lock:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} match was already refunded before the lock")
+
+    def _require_reveal_window_open(self, m: Match) -> None:
+        """Deadlines are exclusive on both sides.
+
+        A reveal must land strictly before reveal_deadline and a no-reveal
+        resolution strictly after it, so the deadline instant itself belongs
+        to neither phase and the two can never both be legal.
+        """
+        if _now_ts() >= int(m.reveal_deadline_ts):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} reveal deadline has passed")
+
+    def _require_lock_window_open(self, m: Match) -> None:
+        if _now_ts() >= int(m.lock_deadline_ts):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} lock deadline has passed")
+
+    def _credit(self, m: Match, target: str, amount: u256) -> None:
+        """The one place a claimable balance ever goes up.
+
+        The invariant is the backstop for every resolution path: a match can
+        never credit more than it actually holds. If some future flag check
+        is missed, the second credit fails the transaction here instead of
+        quietly paying out another match's escrow.
+        """
+        value = int(amount)
+        if value == 0:
+            return
+        if int(m.credited_total) + value > int(m.escrow_total):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} credit would exceed the match escrow")
+        m.credited_total = u256(int(m.credited_total) + value)
+
+        if target == "holder":
+            m.holder_claimable = u256(int(m.holder_claimable) + value)
+        elif target == "buyer":
+            m.buyer_claimable = u256(int(m.buyer_claimable) + value)
+        elif target == "sink":
+            m.sink_claimable = u256(int(m.sink_claimable) + value)
+        else:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} unknown credit target: {target}")
+
+    def _record_coherence(self, m: Match) -> None:
+        """Record whether the two revealed constraints bracket the deal price.
+
+        Deliberately recorded and exposed, never enforced. A party is free to
+        commit whatever constraint it likes; bluffing around a real number is
+        the game. Enforcing holder_min <= deal_price <= buyer_max would make
+        certain bluffs impossible to commit to, so this only makes the
+        relationship visible to anyone reading the match.
+        """
+        if not (m.holder_revealed and m.buyer_revealed):
+            return
+        m.coherence_known = True
+        m.coherent = (
+            int(m.holder_revealed_state) <= int(m.deal_price) <= int(m.buyer_revealed_state)
+        )
+
     def _validate_commitment(self, commitment: str) -> str:
         if not commitment.startswith("0x") or len(commitment) != 66:
             raise gl.vm.UserError(
@@ -633,6 +1060,8 @@ class Carnage(gl.Contract):
         return claim
 
     def _validate_price(self, m: Match, price: u256) -> None:
+        if price > MAX_PRICE:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} price exceeds the protocol maximum")
         if price < m.price_floor or price > m.price_ceil:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} price must lie within the match band")
 
@@ -643,6 +1072,7 @@ class Carnage(gl.Contract):
             return
         m.deal_price = m.holder_proposed_price
         m.price_locked = True
+        m.price_locked_at = u256(_now_ts())
 
     def _decode_salt(self, salt: str) -> bytes:
         if not salt.startswith("0x"):
@@ -653,4 +1083,6 @@ class Carnage(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} salt is not valid hex")
         if len(raw) < MIN_SALT_BYTES:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} salt must be at least {MIN_SALT_BYTES} bytes")
+        if len(raw) > MAX_SALT_BYTES:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} salt must be at most {MAX_SALT_BYTES} bytes")
         return raw

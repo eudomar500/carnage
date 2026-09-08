@@ -150,3 +150,29 @@ def _run_to_revealed(contract, direct_vm, holder, buyer, owner, holder_claim=HOL
     _lock_price(contract, direct_vm, match_id, holder, buyer)
     _reveal_both(contract, direct_vm, match_id, holder, buyer)
     return match_id
+
+
+def _warp(direct_vm, timestamp):
+    """Move the clock in the middle of a test.
+
+    direct_vm.warp() updates the VM clock, but gltest does not push the new
+    value into the gl.message_raw dict the contract already holds, so a
+    contract reading gl.message_raw["datetime"] would keep seeing the old
+    time. Set both, so a test can build a match while its deadlines are still
+    ahead and then step past them.
+    """
+    import sys
+
+    direct_vm.warp(timestamp)
+    gl = sys.modules.get("genlayer.gl")
+    if gl is not None and getattr(gl, "message_raw", None) is not None:
+        gl.message_raw["datetime"] = timestamp
+
+
+def _post_messages(captured):
+    """Only the PostMessage entries: scheduled calls and value transfers.
+
+    Events come through the same hook, so a test asserting about transfers
+    filters them out rather than counting every captured entry.
+    """
+    return [entry["PostMessage"] for entry in captured if "PostMessage" in entry]
