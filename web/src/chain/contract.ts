@@ -176,6 +176,21 @@ export async function findLatestMatchId(max = 64): Promise<bigint | null> {
   return latest;
 }
 
+/**
+ * True once the match has reached any of its four terminal states.
+ *
+ * This is the only definition. It used to be spelled out separately in the
+ * claim gates, the lifecycle and two components, and when refunded_before_lock
+ * was added to the contract, four of those five copies were never updated, so
+ * a refunded match read as unresolved and its credits could not be claimed.
+ * Everything that asks the question now asks it here.
+ */
+export function isResolved(m: MatchState): boolean {
+  return (
+    m.settled || m.no_reveal_resolved || m.inconclusive_resolved || m.refunded_before_lock
+  );
+}
+
 export type ClaimGate =
   | { state: "not-settled"; reason: string }
   | { state: "nothing-to-claim"; reason: string }
@@ -201,11 +216,10 @@ export type ClaimGate =
  * transaction reached FINALIZED.
  */
 export function claimGate(m: MatchState, wallet: string | null): ClaimGate {
-  const resolved = m.settled || m.no_reveal_resolved || m.inconclusive_resolved;
-  if (!resolved) {
+  if (!isResolved(m)) {
     return {
       state: "not-settled",
-      reason: "settlement has not run; the jury verdict is not final yet",
+      reason: "the match has not resolved yet, so nothing is credited",
     };
   }
 
@@ -233,8 +247,7 @@ export function claimGate(m: MatchState, wallet: string | null): ClaimGate {
  * withdraws both in one call, and this gate only describes the sink part.
  */
 export function sinkClaimGate(m: MatchState, wallet: string | null): ClaimGate {
-  const resolved = m.settled || m.no_reveal_resolved || m.inconclusive_resolved;
-  if (!resolved) {
+  if (!isResolved(m)) {
     return { state: "not-settled", reason: "nothing is credited until the match resolves" };
   }
   if (!wallet) return { state: "not-a-party", reason: "connect a wallet to check the sink balance" };

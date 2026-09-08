@@ -70,7 +70,7 @@ export default function Rubric({ match }: { match: MatchState | null }) {
                 {consequenceText(r.label)}
                 {split ? (
                   <em className="rubric-amounts">
-                    keeps {formatToken(split.agent)} | counterparty {formatToken(split.counterparty)} {TOKEN_SYMBOL}
+                    keeps {formatToken(split.agent)} | slashed {formatToken(split.counterparty)} {TOKEN_SYMBOL}
                   </em>
                 ) : null}
               </span>
@@ -85,6 +85,10 @@ export default function Rubric({ match }: { match: MatchState | null }) {
         That distinction is what makes the verdict defensible, and it is
         written into the adjudication prompt itself. The deal price is never
         rewritten: the label picks the penalty, and that is the only lever.
+        A slashed portion normally crosses to the counterparty. Where both
+        sides drew an adverse label it goes to the protocol sink instead,
+        since crossing equal penalties between two liars would cancel out and
+        pay them what two honest players get.
       </p>
 
       <Outcomes />

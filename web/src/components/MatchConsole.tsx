@@ -12,7 +12,7 @@ import {
   SinkClaimPanel,
   SinkTransferPanel,
 } from "./ActionPanels";
-import { sinkClaimGate, type ClaimGate, type MatchState } from "../chain/contract";
+import { isResolved, sinkClaimGate, type ClaimGate, type MatchState } from "../chain/contract";
 import {
   deriveTurn,
   sinkSeatOf,
@@ -139,8 +139,7 @@ function TerminalFlags({ m }: { m: MatchState }) {
  */
 function RefundCountdown({ m, now }: { m: MatchState; now: number }) {
   const funded = m.holder_funded || m.buyer_funded;
-  const resolved =
-    m.settled || m.no_reveal_resolved || m.inconclusive_resolved || m.refunded_before_lock;
+  const resolved = isResolved(m);
   if (!funded || m.price_locked || resolved) return null;
   if (now > Number(m.lock_deadline)) return null;
 

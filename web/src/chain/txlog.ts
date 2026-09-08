@@ -31,9 +31,11 @@ import { isRateLimited } from "./errors";
 export const LINKED_METHODS = [
   "adjudicate",
   "settle",
+  "force_settle",
   "claim",
   "resolve_no_reveal",
   "resolve_inconclusive",
+  "refund_before_lock",
 ] as const;
 
 export type LinkedMethod = (typeof LINKED_METHODS)[number];
@@ -137,10 +139,16 @@ export function requiredMethods(m: {
   settled: boolean;
   no_reveal_resolved: boolean;
   inconclusive_resolved: boolean;
+  refunded_before_lock: boolean;
 }): LinkedMethod[] {
   if (m.no_reveal_resolved) return ["resolve_no_reveal"];
   if (m.inconclusive_resolved) return ["resolve_inconclusive"];
-  if (m.settled) return ["adjudicate", "settle"];
+  if (m.refunded_before_lock) return ["refund_before_lock"];
+  // A settled match was settled either by the scheduled self-call or by the
+  // permissionless fallback. Requiring `settle` alone would run every
+  // force-settled match's scan to exhaustion looking for a transaction that
+  // was never sent, so the verdict is what has to be found.
+  if (m.settled) return ["adjudicate"];
   return [];
 }
 

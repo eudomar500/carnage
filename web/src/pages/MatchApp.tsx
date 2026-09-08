@@ -10,7 +10,7 @@ import AppEntry from "../components/AppEntry";
 import Replay from "../components/Replay";
 import { Vault } from "../components/Icons";
 import { useMatch } from "../hooks/useMatch";
-import { claimGate, isDishonest } from "../chain/contract";
+import { claimGate, isDishonest, isResolved } from "../chain/contract";
 import { seatOf } from "../chain/roles";
 import { derivePhase, isStrike, judgeMood } from "../chain/phase";
 import { CARNAGE_ADDRESS } from "../chain/client";
@@ -270,7 +270,7 @@ export default function MatchApp({
             </div>
           </div>
           <div className="escrow-foot">
-            {m.settled || m.no_reveal_resolved || m.inconclusive_resolved
+            {isResolved(m)
               ? stillLocked > 0n
                 ? `${formatToken(stillLocked)} ${TOKEN_SYMBOL} UNCLAIMED`
                 : "FULLY CLAIMED"

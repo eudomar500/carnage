@@ -1,3 +1,4 @@
+import { isResolved } from "./contract";
 import type { MatchState } from "./contract";
 
 export type Role = "holder" | "buyer";
@@ -85,8 +86,7 @@ export function deriveTurn(
   const seat = seatOf(m, wallet);
   const pending: PendingAction[] = [];
 
-  const resolved =
-    m.settled || m.no_reveal_resolved || m.inconclusive_resolved || m.refunded_before_lock;
+  const resolved = isResolved(m);
 
   const commitDone = (r: Role) => (r === "holder" ? m.holder_committed : m.buyer_committed);
   const fundDone = (r: Role) => (r === "holder" ? m.holder_funded : m.buyer_funded);

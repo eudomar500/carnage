@@ -69,8 +69,12 @@ export default function HowItWorks({ match }: { match: MatchState | null }) {
       <div className="branches" id="no-verdict">
         <h3 className="branches-title">WHEN THERE IS NO VERDICT</h3>
         <p className="doc-lede">
-          Two exits skip adjudication entirely. Neither calls GenLayer, and
-          neither blames anyone for a lie, because neither is about one.
+          Three exits skip adjudication entirely. None calls GenLayer, and none
+          blames anyone for a lie, because none is about one. The fourth entry
+          is not an exit at all: it is how a recorded verdict still gets paid
+          out if the automatic settlement never ran. All four are
+          permissionless and deadline-gated, so no match can strand funds and
+          none depends on the side that walked away.
         </p>
         <div className="branch-grid">
           {BRANCHES.map((br) => {

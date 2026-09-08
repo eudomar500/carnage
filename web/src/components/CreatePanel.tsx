@@ -97,6 +97,13 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
           <span>inconclusive_deadline</span>
           <input value={inconclusiveAt} onChange={(e) => setInconclusiveAt(e.target.value)} spellCheck={false} />
         </label>
+        <p className="turn-hint turn-hint--muted form-row--wide">
+          Both deadlines are ISO timestamps and must carry a timezone, the Z on
+          the end. Both must be in the future, inconclusive_deadline must fall
+          after reveal_deadline, and reveal_deadline must be more than 15
+          minutes out: the contract reserves that window so the reveal phase
+          cannot be squeezed to nothing. The defaults above are 7 and 14 days.
+        </p>
       </div>
 
       <ActionButton

@@ -1,3 +1,4 @@
+import { isResolved } from "./contract";
 import type { MatchState } from "./contract";
 import type { ActionId, Role } from "./roles";
 
@@ -124,8 +125,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         // Tolerant on purpose. If settlement runs between two polls we have
         // still seen what we came for, and reporting a stuck jury because the
         // state ran ahead of us would be a false alarm.
-        landed: (m) =>
-          m.adjudicated || m.settled || m.no_reveal_resolved || m.inconclusive_resolved,
+        landed: (m) => m.adjudicated || isResolved(m),
         pendingNote: "jury is running, waiting for the verdict to be written...",
         confirmedNote: "verdict recorded on-chain",
         retryLabel: "RETRY ADJUDICATION",

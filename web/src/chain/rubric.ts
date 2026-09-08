@@ -67,7 +67,11 @@ export function consequenceText(label: RubricLabel): string {
   if (!split) return "";
   const percent = Number(split.counterparty);
   if (percent === 0) return "0% slashed, stake returned in full";
-  return `${percent}% slashed to the counterparty`;
+  // Where the slashed part lands depends on the other side's label, which a
+  // single row cannot know. Saying "to the counterparty" flatly would
+  // contradict the outcomes table below, where two adverse labels send it to
+  // the sink instead.
+  return `${percent}% slashed away`;
 }
 
 export type RubricRow = {

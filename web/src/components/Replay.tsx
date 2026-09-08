@@ -267,7 +267,14 @@ function buildFrames(m: MatchState): Frame[] {
         "Awards are recomputed from the recorded outcome using the contract's own rule, so they stay correct after each side withdraws. The unclaimed figures are live and fall to zero as claim() is called.",
       // settle is where the verdict becomes money. Claims are the withdrawals
       // that followed, and there may be nought, one or two of them.
-      proof: m.settled ? ["settle", "claim"] : ["claim"],
+      // A settled match got there through the scheduled self-call or through
+      // the permissionless fallback, so both are worth linking; whichever was
+      // not used simply is not found. A refund has its own transaction.
+      proof: m.settled
+        ? ["settle", "force_settle", "claim"]
+        : m.refunded_before_lock
+          ? ["refund_before_lock", "claim"]
+          : ["claim"],
       body: <Settlement m={m} />,
     });
   }
@@ -343,7 +350,9 @@ function Settlement({ m }: { m: MatchState }) {
   const what = m.no_reveal_resolved
     ? (NO_REVEAL_TEXT[m.no_reveal_outcome] ??
        "The reveal deadline passed with a side still unrevealed.")
-    : "The jury never reached consensus before the deadline. Each side was refunded its own stake, with no slash and no transfer.";
+    : m.refunded_before_lock
+      ? "The two sides never agreed a deal price. Once the lock deadline passed, the stakes went back: each side was credited exactly what it funded, with nothing slashed and nothing to the sink."
+      : "The jury never reached consensus before the deadline. Each side was refunded its own stake, with no slash and no transfer.";
 
   return (
     <>
@@ -448,11 +457,15 @@ export default function Replay({ match }: { match: MatchState | null }) {
   const settled = match?.settled ?? false;
   const noReveal = match?.no_reveal_resolved ?? false;
   const inconclusive = match?.inconclusive_resolved ?? false;
+  const refunded = match?.refunded_before_lock ?? false;
   const required = useMemo(
     () => (match ? requiredMethods({
-      settled, no_reveal_resolved: noReveal, inconclusive_resolved: inconclusive,
+      settled,
+      no_reveal_resolved: noReveal,
+      inconclusive_resolved: inconclusive,
+      refunded_before_lock: refunded,
     }) : []),
-    [match, settled, noReveal, inconclusive],
+    [match, settled, noReveal, inconclusive, refunded],
   );
   const lookup = useMatchTransactions(
     match ? match.match_id : null,

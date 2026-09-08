@@ -1,3 +1,4 @@
+import { isResolved } from "./contract";
 import type { MatchState } from "./contract";
 
 /**
@@ -41,7 +42,7 @@ export const BEATS: Beat[] = [
     who: "anyone",
     methods: ["create_match"],
     what: "Seats a holder and a buyer, fixes the price band, the stake each side must post, and the two deadlines.",
-    gate: "the band must be positive and widening, and inconclusive_deadline must fall after reveal_deadline",
+    gate: "holder and buyer must differ, the band must be positive and widening and inside the protocol maximum, the stake must be positive and inside it too, both deadlines must carry a timezone offset and lie in the future, inconclusive_deadline must fall after reveal_deadline, and reveal_deadline must be more than 900 seconds away so the reveal window cannot be squeezed to nothing",
     // Reading a match at all proves it was created.
     done: () => true,
   },
@@ -91,8 +92,8 @@ export const BEATS: Beat[] = [
     venue: "ON-CHAIN",
     who: "holder and buyer, each from their own wallet",
     methods: ["propose_price_holder", "propose_price_buyer"],
-    what: "Both sides propose a number inside the band. The deal price locks the moment the two proposals match. The deal price is never rewritten afterwards, whatever the verdict says.",
-    gate: "both claims must be anchored, and every proposal must lie within price_floor..price_ceil",
+    what: "Both sides propose a number inside the band. The deal price locks the moment the two proposals match. The deal price is never rewritten afterwards, whatever the verdict says. A proposal can be replaced until it locks, so a first offer that misses is not fatal.",
+    gate: "both claims must be anchored, every proposal must lie within price_floor..price_ceil, and proposals are refused at or after lock_deadline, which sits a full reveal window before reveal_deadline",
     done: (m) => m.price_locked,
   },
   {
@@ -102,7 +103,7 @@ export const BEATS: Beat[] = [
     who: "holder and buyer, each from their own wallet",
     methods: ["reveal_holder", "reveal_buyer"],
     what: "Each side opens its commitment with (state, salt). The contract recomputes the hash through the same compute_commitment view and rejects anything that does not match. After this nothing is private.",
-    gate: "the deal price must be locked, and the recomputed hash must equal the stored commitment",
+    gate: "the deal price must be locked, the recomputed hash must equal the stored commitment, the match must not already be resolved, and the reveal must land strictly before reveal_deadline",
     done: (m) => m.holder_revealed && m.buyer_revealed,
   },
   {
@@ -119,10 +120,10 @@ export const BEATS: Beat[] = [
     key: "settle",
     title: "SETTLE",
     venue: "ON-CHAIN",
-    who: "the contract itself, and nobody else",
-    methods: ["settle"],
-    what: "Accepted is not finalized. adjudicate does not settle inline: it schedules settle with on=\"finalized\", so settlement runs only once the appeal window on the verdict has closed. settle then credits claimable balances from the labels. It moves no funds itself.",
-    gate: "sender must be the contract address, the match must be adjudicated, and it settles once",
+    who: "the contract itself, with force_settle as a permissionless fallback",
+    methods: ["settle", "force_settle"],
+    what: "Accepted is not finalized. adjudicate does not settle inline: it schedules settle with on=\"finalized\", so settlement runs only once the appeal window on the verdict has closed. settle then credits claimable balances from the labels. It moves no funds itself. If that scheduled message never arrives, force_settle lets anyone apply the same stored labels through the same rule once the grace period has passed, so a recorded verdict cannot sit unpaid forever.",
+    gate: "settle takes the contract address as sender and settles once; force_settle takes any sender, but only 2 hours after adjudication and only while the match is still unsettled",
     done: (m) => m.settled,
   },
   {
@@ -138,9 +139,18 @@ export const BEATS: Beat[] = [
 ];
 
 /**
- * The two deterministic exits. Neither calls GenLayer, and neither produces a
- * verdict, which is exactly why they exist: a protocol violation and a judge
- * that cannot decide are different problems from a lie.
+ * The ways a match ends without a verdict, plus the fallback that pays out a
+ * verdict nobody applied.
+ *
+ * Three of these skip adjudication entirely: a price that never locked, a
+ * reveal that never came, and a jury that never decided. None calls GenLayer,
+ * and none blames anyone for a lie, because none is about one. The fourth,
+ * force_settle, is not an exit from the verdict path but a way to finish it
+ * when the automatic settlement did not run.
+ *
+ * All four are permissionless and deadline-gated, which is the whole point:
+ * no state can strand funds, and no match depends on the party that walked
+ * away from it.
  */
 export type Branch = {
   key: string;
@@ -152,6 +162,14 @@ export type Branch = {
 };
 
 export const BRANCHES: Branch[] = [
+  {
+    key: "refund-before-lock",
+    title: "NO DEAL PRICE",
+    method: "refund_before_lock",
+    when: "lock_deadline passes with the two sides still not agreed on a price",
+    outcome: "Stakes are in escrow but the negotiation never produced a number both sides proposed. Nobody broke a rule, so nothing is slashed and nothing goes to the sink: each side is credited exactly what it funded. Anyone may trigger it, so a side that walked away cannot hold the other's stake.",
+    taken: (m) => m.refunded_before_lock,
+  },
   {
     key: "no-reveal",
     title: "NO REVEAL",
@@ -168,6 +186,14 @@ export const BRANCHES: Branch[] = [
     outcome: "If the jury genuinely cannot decide, nobody is punished. Each side gets its own stake back as a claimable credit: no slash, no transfer to the counterparty, nothing to the sink.",
     taken: (m) => m.inconclusive_resolved,
   },
+  {
+    key: "force-settle",
+    title: "SETTLEMENT NEVER RAN",
+    method: "force_settle",
+    when: "a verdict is recorded but the scheduled settlement has not run, and 2 hours have passed since adjudication",
+    outcome: "The labels are already stored, so there is nothing to judge again. This applies the same settlement rule the automatic path would have applied. It exists so a verdict cannot sit unpaid: the normal path runs first on a healthy chain, and this is the fallback when it does not.",
+    taken: (m) => m.adjudicated && !m.settled,
+  },
 ];
 
 /** Index of the first beat still outstanding, or -1 when the match is done. */
@@ -175,7 +201,6 @@ export function nextBeatIndex(m: MatchState): number {
   return BEATS.findIndex((b) => !b.done(m));
 }
 
-/** True once the match has reached any of its three terminal states. */
-export function isResolved(m: MatchState): boolean {
-  return m.settled || m.no_reveal_resolved || m.inconclusive_resolved;
-}
+// Re-exported so the lifecycle's own consumers keep one import, but the
+// definition lives in contract.ts next to MatchState. There is exactly one.
+export { isResolved };
