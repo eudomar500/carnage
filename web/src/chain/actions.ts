@@ -1,7 +1,8 @@
 import { TransactionStatus } from "genlayer-js/types";
 import type { CalldataEncodable } from "genlayer-js/types";
 import type { Stage } from "./errors";
-import { CARNAGE_ADDRESS, readClient, simulationClient, toCalldataAddress, writeClient } from "./client";
+import { concat, hexToBytes, keccak256, numberToBytes } from "viem";
+import { CARNAGE_ADDRESS, simulationClient, toCalldataAddress, writeClient } from "./client";
 import { getMatch } from "./contract";
 import type { Role } from "./roles";
 import { decodeGenvmError, tagStage } from "./errors";
@@ -176,23 +177,55 @@ export async function createMatch(
 
 // ---- commit ---------------------------------------------------------------
 
+const MIN_SALT_BYTES = 16;
+const MAX_SALT_BYTES = 64;
+const ADDRESS_BYTES = 20;
+
 /**
- * Hashes through the contract's own compute_commitment view rather than
- * reimplementing keccak locally, so the value committed is byte-identical to
- * what reveal will recompute. It is a free read.
+ * Builds the commitment hash in the browser.
+ *
+ * This used to call the contract's compute_commitment view, which meant the
+ * live (state, salt) pair travelled to whichever node served the read, before
+ * the commitment was anywhere on-chain. That hands the node the one secret
+ * the commit is supposed to hide. The contract documents that view as
+ * verification-only for exactly this reason, so the hash is built here and
+ * nothing about the secret leaves the browser until the reveal.
+ *
+ * The preimage mirrors compute_commitment in contracts/carnage.py byte for
+ * byte: state as 32 bytes big-endian, then the raw salt bytes, then match_id
+ * as 32 bytes big-endian, then the agent's 20 address bytes, keccak256 over
+ * the whole buffer. The salt bounds mirror _decode_salt so a salt the
+ * contract would reject fails here rather than at reveal time.
  */
-export async function computeCommitment(
+export function computeCommitment(
   matchId: bigint,
   state: bigint,
   salt: `0x${string}`,
   agent: string,
-): Promise<string> {
-  const out = await readClient().readContract({
-    address: CARNAGE_ADDRESS,
-    functionName: "compute_commitment",
-    args: [state, salt, matchId, toCalldataAddress(agent)],
-  });
-  return String(out);
+): `0x${string}` {
+  if (!salt.startsWith("0x")) throw new Error("salt must be 0x-prefixed hex");
+  const saltBytes = hexToBytes(salt);
+  if (saltBytes.length < MIN_SALT_BYTES) {
+    throw new Error(`salt must be at least ${MIN_SALT_BYTES} bytes`);
+  }
+  if (saltBytes.length > MAX_SALT_BYTES) {
+    throw new Error(`salt must be at most ${MAX_SALT_BYTES} bytes`);
+  }
+
+  const agentHex = (agent.startsWith("0x") ? agent : `0x${agent}`) as `0x${string}`;
+  const agentBytes = hexToBytes(agentHex);
+  if (agentBytes.length !== ADDRESS_BYTES) {
+    throw new Error("agent must be a 20 byte address");
+  }
+
+  return keccak256(
+    concat([
+      numberToBytes(state, { size: 32 }),
+      saltBytes,
+      numberToBytes(matchId, { size: 32 }),
+      agentBytes,
+    ]),
+  );
 }
 
 export async function commit(
@@ -310,4 +343,63 @@ export async function adjudicate(
   matchId: bigint,
 ): Promise<SendResult> {
   return send(account, { functionName: "adjudicate", args: [matchId] });
+}
+
+// ---- recovery -------------------------------------------------------------
+
+/**
+ * Permissionless exit for a match that funded but never agreed a price.
+ *
+ * Preflighted like every other deterministic write, so the contract's own
+ * deadline and terminal-flag guards are what decide, not the clock in this
+ * browser. Returns each side exactly what it funded: no slash, nothing to the
+ * sink.
+ */
+export async function refundBeforeLock(
+  account: `0x${string}`,
+  matchId: bigint,
+): Promise<SendResult> {
+  return run(account, { functionName: "refund_before_lock", args: [matchId] });
+}
+
+/**
+ * Permissionless fallback for a verdict that never got paid out.
+ *
+ * settle() only runs as the finalized self-call adjudicate() schedules. If
+ * that message never arrives the labels sit on the match with nothing able to
+ * apply them, and this pushes the same settlement through once the grace
+ * period has passed.
+ *
+ * get_match does not expose adjudicated_at, so the UI cannot time the grace
+ * period itself. The preflight does it instead: too early and the contract
+ * answers "settle grace period has not passed yet", which is surfaced as the
+ * failure reason.
+ */
+export async function forceSettle(
+  account: `0x${string}`,
+  matchId: bigint,
+): Promise<SendResult> {
+  return run(account, { functionName: "force_settle", args: [matchId] });
+}
+
+/**
+ * Step one of the two-step sink handover. Only the current sink may call it,
+ * and it does not move the role: the proposed address has to accept.
+ *
+ * Proposing the zero address is the contract's way of cancelling a pending
+ * handover.
+ */
+export async function proposeSinkAddress(
+  account: `0x${string}`,
+  newSink: string,
+): Promise<SendResult> {
+  return run(account, {
+    functionName: "propose_sink_address",
+    args: [toCalldataAddress(newSink)],
+  });
+}
+
+/** Step two, sent by the pending sink itself. Takes no arguments. */
+export async function acceptSinkAddress(account: `0x${string}`): Promise<SendResult> {
+  return run(account, { functionName: "accept_sink_address", args: [] });
 }
