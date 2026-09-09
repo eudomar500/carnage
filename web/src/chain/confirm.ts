@@ -35,7 +35,24 @@ export type Confirmation = {
   retryLabel: string;
   /** Shown when the window closed without the change landing. */
   unconfirmedNote: string;
+  /**
+   * Shown when the transaction reached a terminal state on-chain and the
+   * postcondition never became true, so the attempt is over and failed.
+   *
+   * Distinct from unconfirmedNote, which only means we stopped watching. This
+   * one is a finding, not a timeout: the chain has told us the answer.
+   */
+  discardedNote: string;
 };
+
+/**
+ * The generic case. A deterministic write is preflighted before it is ever
+ * signed, so it reaching a terminal state with nothing written means the round
+ * itself was discarded rather than the call being rejected.
+ */
+const DISCARDED_NOTE =
+  "This transaction finished on-chain without recording the change, so the " +
+  "round was discarded rather than applied. Nothing was spent. Send it again.";
 
 const mine = <K extends keyof MatchState>(role: Role, holderKey: K, buyerKey: K) =>
   (m: MatchState) => Boolean(m[role === "holder" ? holderKey : buyerKey]);
@@ -52,7 +69,12 @@ const JURY_WINDOW_MS = 240_000;
 const JURY_POLL_MS = 8_000;
 
 export function confirmationFor(id: ActionId, role: Role): Confirmation {
-  const base = { actionId: id, windowMs: FAST_WINDOW_MS, pollMs: FAST_POLL_MS };
+  const base = {
+    actionId: id,
+    windowMs: FAST_WINDOW_MS,
+    pollMs: FAST_POLL_MS,
+    discardedNote: DISCARDED_NOTE,
+  };
 
   switch (id) {
     case "create_match":
@@ -122,6 +144,15 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         windowMs: JURY_WINDOW_MS,
         pollMs: JURY_POLL_MS,
+        // The one action that hits this regularly. adjudicate is the only
+        // call the app does not preflight, and the only one that runs a
+        // nondeterministic round, so every validator re-runs both prompts and
+        // a slow set times the round out. See chain/txstate.ts.
+        discardedNote:
+          "The previous jury round finished on-chain but did not write a " +
+          "verdict to the contract. This happens on Bradbury when validators " +
+          "time out and the round is discarded under heavy appeals. Nothing " +
+          "was spent from escrow. You can summon the jury again.",
         // Tolerant on purpose. If settlement runs between two polls we have
         // still seen what we came for, and reporting a stuck jury because the
         // state ran ahead of us would be a false alarm.
@@ -139,6 +170,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         windowMs: 120_000,
         pollMs: FAST_POLL_MS,
+        discardedNote: DISCARDED_NOTE,
         landed: (m) => (role === "holder" ? m.holder_claimable : m.buyer_claimable) === 0n,
         pendingNote: "confirming the claim was recorded...",
         confirmedNote: "claim recorded",
@@ -152,6 +184,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         windowMs: 120_000,
         pollMs: FAST_POLL_MS,
+        discardedNote: DISCARDED_NOTE,
         landed: (m) => m.sink_claimable === 0n,
         pendingNote: "confirming the sink claim was recorded...",
         confirmedNote: "sink balance claimed",

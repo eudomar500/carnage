@@ -87,7 +87,10 @@ export default function ClaimPanel(p: ClaimPanelProps) {
   // confirmed action stays disabled, and only a genuine failure or an
   // unconfirmed attempt puts the button back, relabelled as a retry.
   const busy = a.phase.kind === "submitting" || a.phase.kind === "pending";
-  const retry = a.phase.kind === "failed" || a.phase.kind === "unconfirmed";
+  const retry =
+    a.phase.kind === "failed" ||
+    a.phase.kind === "unconfirmed" ||
+    a.phase.kind === "discarded";
   const done = a.phase.kind === "confirmed";
 
   const idleText = ready
@@ -106,7 +109,9 @@ export default function ClaimPanel(p: ClaimPanelProps) {
       ? "WORKING..."
       : phase.kind === "pending"
         ? "CONFIRMING ON-CHAIN..."
-        : phase.kind === "failed" || phase.kind === "unconfirmed"
+        : phase.kind === "failed" ||
+            phase.kind === "unconfirmed" ||
+            phase.kind === "discarded"
           ? phase.retryLabel
           : idleText;
 
@@ -147,6 +152,7 @@ export default function ClaimPanel(p: ClaimPanelProps) {
       ) : null}
       {phase.kind === "failed" ? <p className="claim-note act-err">{phase.note}</p> : null}
       {phase.kind === "unconfirmed" ? <p className="claim-note act-warn">{phase.note}</p> : null}
+      {phase.kind === "discarded" ? <p className="claim-note act-warn">{phase.note}</p> : null}
       {payout ? <p className="claim-note">{payout}</p> : null}
     </div>
   );

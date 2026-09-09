@@ -10,6 +10,7 @@ import {
   type Attempt,
 } from "../chain/journal";
 import type { ActionId } from "../chain/roles";
+import { readTxVerdict } from "../chain/txstate";
 
 /**
  * Where one action currently stands.
@@ -25,7 +26,15 @@ export type ActionPhase =
   | { kind: "pending"; note: string }
   | { kind: "confirmed"; note: string }
   | { kind: "failed"; note: string; retryLabel: string }
-  | { kind: "unconfirmed"; note: string; retryLabel: string };
+  | { kind: "unconfirmed"; note: string; retryLabel: string }
+  /**
+   * The transaction is terminal on-chain and the change never appeared.
+   *
+   * Not a timeout. The chain has answered, the answer is no, and the step is
+   * open again. The hash rides along so the message can point at the round
+   * that was thrown away even after its journal record is gone.
+   */
+  | { kind: "discarded"; note: string; retryLabel: string; hash: string | null };
 
 /**
  * An attempt this page did not start, picked up from the journal.
@@ -79,6 +88,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * honest answer to that.
  */
 export const RESUME_BUDGET_MS = 30 * 60_000;
+
+/**
+ * Minimum gap between two reads of the transaction's own status.
+ *
+ * The state poll already runs at the confirmation's own cadence; this rides
+ * alongside it and there is no reason for both to run at the same rate.
+ */
+const TX_CHECK_MS = 10_000;
 
 /**
  * The journaled attempt worth resuming, read straight from storage.
@@ -165,26 +182,85 @@ export function useAction(opts: ActionOptions): ActionRunner {
     }
   }, []);
 
+  /**
+   * Whether the transaction behind an attempt has already answered.
+   *
+   * Throttled, because this is a second RPC alongside the state poll and the
+   * node rate limits. A transaction cannot be terminal in the first seconds
+   * anyway, so nothing is lost by asking less often than we read state.
+   */
+  const isDead = useCallback(
+    async (c: Confirmation, hash: string | null): Promise<boolean> => {
+      if (!hash) return false;
+      const verdict = await readTxVerdict(hash);
+      if (!verdict?.terminal) return false;
+      // The change may have landed between the state read and this one, so
+      // never call an attempt dead without looking at state one more time.
+      const after = await readState();
+      if (after && c.landed && c.landed(after)) return false;
+      return true;
+    },
+    [readState],
+  );
+
   const awaitLanding = useCallback(
-    async (c: Confirmation, deadline: number, mine: () => boolean): Promise<boolean> => {
-      if (!c.landed) return true;
+    async (
+      c: Confirmation,
+      deadline: number,
+      mine: () => boolean,
+    ): Promise<"landed" | "discarded" | "timeout"> => {
+      if (!c.landed) return "landed";
+      let nextTxCheck = Date.now() + TX_CHECK_MS;
       for (;;) {
-        if (!mine()) return false;
+        if (!mine()) return "timeout";
         const m = await readState();
-        if (!mine()) return false;
-        if (m && c.landed(m)) return true;
+        if (!mine()) return "timeout";
+        if (m && c.landed(m)) return "landed";
+
+        // The change is not there. Ask whether the transaction that was meant
+        // to produce it is still capable of doing so. Once it is terminal,
+        // waiting out the rest of the window only delays reopening the step.
+        if (Date.now() >= nextTxCheck) {
+          nextTxCheck = Date.now() + TX_CHECK_MS;
+          const dead = await isDead(c, hashRef.current);
+          if (!mine()) return "timeout";
+          if (dead) return "discarded";
+        }
 
         const left = deadline - Date.now();
         if (left <= 0) break;
         set({ kind: "pending", note: `${c.pendingNote} (${Math.ceil(left / 1000)}s left)` });
         await sleep(Math.min(c.pollMs, left));
       }
-      if (!mine()) return false;
+      if (!mine()) return "timeout";
       // One last look: the change may have landed during the final sleep.
       const last = await readState();
-      return Boolean(last && c.landed(last));
+      if (last && c.landed(last)) return "landed";
+      return (await isDead(c, hashRef.current)) ? "discarded" : "timeout";
     },
-    [readState, set],
+    [isDead, readState, set],
+  );
+
+  /**
+   * Drops the journal record and reopens the step.
+   *
+   * This is the whole point of the terminal check. A record left behind by a
+   * round the chain threw away used to sit in storage until the resume budget
+   * expired, or until somebody cleared localStorage by hand, and the button
+   * stayed dead the entire time.
+   */
+  const markDiscarded = useCallback(
+    (c: Confirmation, matchId: bigint | number) => {
+      clearAttempt(matchId, c.actionId);
+      setInFlight(null);
+      set({
+        kind: "discarded",
+        note: c.discardedNote,
+        retryLabel: c.retryLabel,
+        hash: hashRef.current,
+      });
+    },
+    [set],
   );
 
   const settle = useCallback(
@@ -195,18 +271,22 @@ export function useAction(opts: ActionOptions): ActionRunner {
       mine: () => boolean,
     ) => {
       set({ kind: "pending", note: c.pendingNote });
-      const landed = await awaitLanding(c, Date.now() + c.windowMs, mine);
+      const outcome = await awaitLanding(c, Date.now() + c.windowMs, mine);
       if (!mine()) return;
-      if (landed) {
+      if (outcome === "landed") {
         clearAttempt(matchId, c.actionId);
         setInFlight(null);
         set({ kind: "confirmed", note: successNote });
         return;
       }
+      if (outcome === "discarded") {
+        markDiscarded(c, matchId);
+        return;
+      }
       writeAttempt(matchId, c.actionId, "unconfirmed", undefined, hashRef.current ?? undefined);
       set({ kind: "unconfirmed", note: c.unconfirmedNote, retryLabel: c.retryLabel });
     },
-    [awaitLanding, set],
+    [awaitLanding, markDiscarded, set],
   );
 
   const run = useCallback(
@@ -302,6 +382,10 @@ export function useAction(opts: ActionOptions): ActionRunner {
     const prior = readAttempt(matchId, confirm.actionId);
     if (!prior || prior.outcome === "confirmed") return;
 
+    // The watch below asks the transaction for its own status, so it needs the
+    // hash from the record and not only from a send this page made.
+    if (prior.hash && !hashRef.current) hashRef.current = prior.hash;
+
     const myGen = ++gen.current;
     const mine = () => alive.current && gen.current === myGen;
 
@@ -318,14 +402,29 @@ export function useAction(opts: ActionOptions): ActionRunner {
           return;
         }
 
+        // Before settling in to watch, ask the chain whether there is anything
+        // left to watch for. A record whose transaction is already terminal
+        // with nothing written is the case that used to strand the step behind
+        // an in-flight notice for the rest of the resume budget.
+        if (await isDead(confirm, prior.hash ?? null)) {
+          if (!mine()) return;
+          markDiscarded(confirm, matchId);
+          return;
+        }
+        if (!mine()) return;
+
         if (prior.outcome === "pending" && Date.now() - prior.startedAt < RESUME_BUDGET_MS) {
           set({ kind: "pending", note: confirm.pendingNote });
-          const landed = await awaitLanding(confirm, prior.startedAt + RESUME_BUDGET_MS, mine);
+          const outcome = await awaitLanding(confirm, prior.startedAt + RESUME_BUDGET_MS, mine);
           if (!mine()) return;
-          if (landed) {
+          if (outcome === "landed") {
             clearAttempt(matchId, confirm.actionId);
             setInFlight(null);
             set({ kind: "confirmed", note: confirm.confirmedNote });
+            return;
+          }
+          if (outcome === "discarded") {
+            markDiscarded(confirm, matchId);
             return;
           }
         }
@@ -342,7 +441,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
       // Supersede this watch so a loop asleep between polls stops on waking.
       gen.current += 1;
     };
-  }, [awaitLanding, readState, set]);
+  }, [awaitLanding, isDead, markDiscarded, readState, set]);
 
   const reset = useCallback(() => set({ kind: "idle" }), [set]);
 

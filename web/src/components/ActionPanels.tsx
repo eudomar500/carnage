@@ -302,7 +302,15 @@ export function AdjudicatePanel({
   const go = () =>
     a.run(async (say, sent) => {
       say("confirm in your wallet; the jury runs on-chain, this is slow...");
-      await adjudicate(wallet, match.match_id, { onSubmitted: sent });
+      await adjudicate(wallet, match.match_id, {
+        onSubmitted: (hash) => {
+          sent(hash);
+          // The wait for acceptance alone runs to six minutes on this step.
+          // Leaving the wallet prompt on screen for all of it reads as a
+          // stuck panel, so the note moves on once the round is out.
+          say("jury round submitted, waiting for the validators to return...");
+        },
+      });
       return "verdict recorded on-chain";
     });
 
