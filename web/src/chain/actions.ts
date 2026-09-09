@@ -24,6 +24,20 @@ export type SendResult = {
   status: TransactionStatus;
 };
 
+/**
+ * A window onto a send while it is still happening.
+ *
+ * `send` does not return until the transaction has been accepted, which on
+ * this chain can be minutes. The hash exists long before that, and the attempt
+ * journal needs it at the moment it exists rather than at the moment the wait
+ * ends: an attempt that is never going to return is exactly the one whose hash
+ * the user has to be able to look up.
+ */
+export type SendHooks = {
+  /** Fired once the wallet has broadcast, before the receipt wait begins. */
+  onSubmitted?: (hash: `0x${string}`) => void;
+};
+
 type CallSpec = {
   functionName: string;
   args: CalldataEncodable[];
@@ -72,7 +86,11 @@ function rethrow(err: unknown, stage: Stage): Error {
  * against contract state before offering a retry. Collapsing the two is how a
  * button gets re-enabled under a transaction that is still in flight.
  */
-export async function send(account: `0x${string}`, spec: CallSpec): Promise<SendResult> {
+export async function send(
+  account: `0x${string}`,
+  spec: CallSpec,
+  hooks?: SendHooks,
+): Promise<SendResult> {
   const client = writeClient(account);
   let hash: Awaited<ReturnType<typeof client.writeContract>>;
   try {
@@ -85,6 +103,10 @@ export async function send(account: `0x${string}`, spec: CallSpec): Promise<Send
   } catch (err) {
     throw rethrow(err, "submit");
   }
+
+  // Recorded here, between broadcast and the wait, because everything after
+  // this point can take minutes or never finish at all.
+  hooks?.onSubmitted?.(hash);
 
   try {
     const receipt = await client.waitForTransactionReceipt({
@@ -100,9 +122,13 @@ export async function send(account: `0x${string}`, spec: CallSpec): Promise<Send
 }
 
 /** Preflight, then send. */
-export async function run(account: `0x${string}`, spec: CallSpec): Promise<SendResult> {
+export async function run(
+  account: `0x${string}`,
+  spec: CallSpec,
+  hooks?: SendHooks,
+): Promise<SendResult> {
   await preflight(account, spec);
-  return send(account, spec);
+  return send(account, spec, hooks);
 }
 
 // ---- create ---------------------------------------------------------------
@@ -138,6 +164,7 @@ function createArgs(i: CreateMatchInput): CalldataEncodable[] {
 export async function createMatch(
   account: `0x${string}`,
   input: CreateMatchInput,
+  hooks?: SendHooks,
 ): Promise<{ matchId: bigint } & SendResult> {
   const args = createArgs(input);
 
@@ -153,7 +180,7 @@ export async function createMatch(
     throw rethrow(err, "preflight");
   }
 
-  const result = await send(account, { functionName: "create_match", args });
+  const result = await send(account, { functionName: "create_match", args }, hooks);
 
   // Confirm which id actually landed: scan forward from the prediction.
   for (let id = predicted; id < predicted + 8n; id++) {
@@ -233,11 +260,12 @@ export async function commit(
   matchId: bigint,
   role: Role,
   commitment: string,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   return run(account, {
     functionName: role === "holder" ? "commit_holder" : "commit_buyer",
     args: [matchId, commitment],
-  });
+  }, hooks);
 }
 
 // ---- fund -----------------------------------------------------------------
@@ -257,6 +285,7 @@ export async function fund(
   matchId: bigint,
   role: Role,
   stakeWei: bigint,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   const functionName = role === "holder" ? "fund_holder" : "fund_buyer";
   try {
@@ -265,7 +294,7 @@ export async function fund(
     const msg = (err as Error).message;
     if (!msg.includes(FUND_VALUE_GUARD)) throw err;
   }
-  return send(account, { functionName, args: [matchId], value: stakeWei });
+  return send(account, { functionName, args: [matchId], value: stakeWei }, hooks);
 }
 
 // ---- anchor claim ---------------------------------------------------------
@@ -275,11 +304,12 @@ export async function anchorClaim(
   matchId: bigint,
   role: Role,
   claim: string,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   return run(account, {
     functionName: role === "holder" ? "anchor_claim_holder" : "anchor_claim_buyer",
     args: [matchId, claim],
-  });
+  }, hooks);
 }
 
 // ---- deal price -----------------------------------------------------------
@@ -289,11 +319,12 @@ export async function proposePrice(
   matchId: bigint,
   role: Role,
   price: bigint,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   return run(account, {
     functionName: role === "holder" ? "propose_price_holder" : "propose_price_buyer",
     args: [matchId, price],
-  });
+  }, hooks);
 }
 
 // ---- reveal ---------------------------------------------------------------
@@ -309,11 +340,12 @@ export async function reveal(
   role: Role,
   state: bigint,
   salt: `0x${string}`,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   return run(account, {
     functionName: role === "holder" ? "reveal_holder" : "reveal_buyer",
     args: [matchId, state, salt],
-  });
+  }, hooks);
 }
 
 /** Gasless check that (state, salt) will satisfy the stored commitment. */
@@ -341,8 +373,9 @@ export async function checkReveal(
 export async function adjudicate(
   account: `0x${string}`,
   matchId: bigint,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
-  return send(account, { functionName: "adjudicate", args: [matchId] });
+  return send(account, { functionName: "adjudicate", args: [matchId] }, hooks);
 }
 
 // ---- recovery -------------------------------------------------------------
@@ -358,8 +391,9 @@ export async function adjudicate(
 export async function refundBeforeLock(
   account: `0x${string}`,
   matchId: bigint,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
-  return run(account, { functionName: "refund_before_lock", args: [matchId] });
+  return run(account, { functionName: "refund_before_lock", args: [matchId] }, hooks);
 }
 
 /**
@@ -378,8 +412,9 @@ export async function refundBeforeLock(
 export async function forceSettle(
   account: `0x${string}`,
   matchId: bigint,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
-  return run(account, { functionName: "force_settle", args: [matchId] });
+  return run(account, { functionName: "force_settle", args: [matchId] }, hooks);
 }
 
 /**
@@ -392,14 +427,18 @@ export async function forceSettle(
 export async function proposeSinkAddress(
   account: `0x${string}`,
   newSink: string,
+  hooks?: SendHooks,
 ): Promise<SendResult> {
   return run(account, {
     functionName: "propose_sink_address",
     args: [toCalldataAddress(newSink)],
-  });
+  }, hooks);
 }
 
 /** Step two, sent by the pending sink itself. Takes no arguments. */
-export async function acceptSinkAddress(account: `0x${string}`): Promise<SendResult> {
-  return run(account, { functionName: "accept_sink_address", args: [] });
+export async function acceptSinkAddress(
+  account: `0x${string}`,
+  hooks?: SendHooks,
+): Promise<SendResult> {
+  return run(account, { functionName: "accept_sink_address", args: [] }, hooks);
 }

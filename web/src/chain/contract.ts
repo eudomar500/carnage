@@ -278,6 +278,7 @@ export async function sendClaim(
   matchId: number | bigint,
   wallet: `0x${string}`,
   onStage?: (stage: ClaimStage) => void,
+  onSubmitted?: (hash: `0x${string}`) => void,
 ): Promise<{ hash: `0x${string}`; status: TransactionStatus }> {
   const client = writeClient(wallet);
   let hash: Awaited<ReturnType<typeof client.writeContract>>;
@@ -291,6 +292,10 @@ export async function sendClaim(
   } catch (err) {
     throw tagStage(err, "submit");
   }
+
+  // Same reason as actions.send: the hash has to be recorded between the
+  // broadcast and the wait, not after it.
+  onSubmitted?.(hash);
 
   // Tagged the same way as actions.send: once the claim is broadcast, a failure
   // to see the receipt is not a failed claim, and the button must not come back

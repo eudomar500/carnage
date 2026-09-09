@@ -3,6 +3,8 @@ import { confirmationFor } from "../chain/confirm";
 import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
 import type { Role } from "../chain/roles";
 import { useAction } from "../hooks/useAction";
+import { explorerTxUrl } from "../chain/txlog";
+import InFlightNotice from "./InFlight";
 import { formatToken, TOKEN_SYMBOL } from "../lib/format";
 
 export type ClaimPanelProps = {
@@ -29,7 +31,8 @@ export type ClaimPanelProps = {
  * worse than having one.
  *
  * Because both buttons journal under the same match id and action id, an
- * attempt started at either one is picked up by both after a reload.
+ * attempt started at either one is picked up by both after a reload, and both
+ * hand it the same in-flight notice instead of a live button.
  *
  * The gate itself is claimGate() in chain/contract.ts. It keys off `settled`,
  * which only becomes true once adjudication has FINALIZED.
@@ -52,18 +55,30 @@ export default function ClaimPanel(p: ClaimPanelProps) {
     );
   }
 
+  if (a.inFlight) {
+    return (
+      <div className="claim">
+        <InFlightNotice inFlight={a.inFlight} onDismiss={a.dismiss} />
+      </div>
+    );
+  }
+
   const wallet = p.wallet;
   const ready = p.gate.state === "ready";
 
   const run = () =>
-    a.run(async (say) => {
+    a.run(async (say, sent) => {
       say("confirm the transaction in your wallet...");
-      await sendClaim(p.match.match_id, wallet, (stage) =>
-        setPayout(
-          stage === "accepted"
-            ? "claim accepted; the GEN is released when this transaction finalizes"
-            : "payout finalized; the GEN has left escrow",
-        ),
+      await sendClaim(
+        p.match.match_id,
+        wallet,
+        (stage) =>
+          setPayout(
+            stage === "accepted"
+              ? "claim accepted; the GEN is released when this transaction finalizes"
+              : "payout finalized; the GEN has left escrow",
+          ),
+        sent,
       );
       return "claim recorded";
     });
@@ -114,6 +129,21 @@ export default function ClaimPanel(p: ClaimPanelProps) {
       </p>
       {phase.kind === "submitting" || phase.kind === "pending" || phase.kind === "confirmed" ? (
         <p className="claim-note">{phase.note}</p>
+      ) : null}
+      {busy && a.hash ? (
+        <p className="claim-note act-tx">
+          tx <code>{a.hash.slice(0, 10)}...{a.hash.slice(-8)}</code>
+          {explorerTxUrl(a.hash) ? (
+            <a
+              className="inflight-link"
+              href={explorerTxUrl(a.hash)!}
+              target="_blank"
+              rel="noreferrer"
+            >
+              CHECK THE EXPLORER
+            </a>
+          ) : null}
+        </p>
       ) : null}
       {phase.kind === "failed" ? <p className="claim-note act-err">{phase.note}</p> : null}
       {phase.kind === "unconfirmed" ? <p className="claim-note act-warn">{phase.note}</p> : null}

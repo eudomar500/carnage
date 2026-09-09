@@ -117,6 +117,23 @@ deadline to be strictly past. The deadline instant belongs to neither phase,
 so a reveal and a no-reveal resolution can never both be legal at the same
 moment.
 
+## The deal price is agreed off-chain
+
+The two sealed constraints and the deal price are different kinds of thing,
+and it is worth keeping them apart. The constraints are private numbers each
+side commits to alone, hidden behind a salted hash until reveal. The deal
+price is not private and is not committed to: it is the outcome of a social
+negotiation the contract has no part in.
+
+The players agree a number between themselves off-chain, in whatever channel
+they are using, then each sends it with `propose_price_holder` or
+`propose_price_buyer`. `_try_lock_price` sets `deal_price` and `price_locked`
+only once both proposals are recorded and equal, and every proposal is checked
+against the match band. So the contract validates and records an agreement
+that was reached elsewhere; it never proposes a price, and it has no view on
+what a fair one would be. An unmatched pair of proposals is simply not a lock,
+which is the state failure case 1 below exists to clear.
+
 ## Failure handling
 
 Resolution degrades in layers.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coverageNote, discoverMatches, type Discovery } from "../chain/discovery";
+import { noteObserved } from "../chain/grace";
 import {
   actionCount,
   buildRoster,
@@ -104,6 +105,9 @@ export function useNotifications(wallet: `0x${string}` | null): NotificationFeed
         const found = await discoverMatches(wallet);
         if (cancelled || !alive.current) return;
         setDiscovery(found);
+        // The sweep sees matches the user has not opened, so this is the
+        // earliest sighting the force-settle estimate can get.
+        for (const m of found.matches) noteObserved(m);
         // One pass over the matches discovery already read. No second scan.
         const next = notificationsForMatches(found.matches, wallet);
         setItems(next);

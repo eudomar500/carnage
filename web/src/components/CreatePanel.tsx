@@ -4,6 +4,7 @@ import { createMatch } from "../chain/actions";
 import { confirmationFor } from "../chain/confirm";
 import { useAction } from "../hooks/useAction";
 import ActionButton from "./ActionButton";
+import InFlightNotice from "./InFlight";
 import { TOKEN_DECIMALS } from "../chain/client";
 import { TOKEN_SYMBOL } from "../lib/format";
 
@@ -39,24 +40,36 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
   // for the watcher to poll.
   const a = useAction({ matchId: 0, confirm: confirmationFor("create_match", "holder") });
 
-  const useMine = (set: (v: string) => void) => () => wallet && set(wallet);
+  const fillMine = (set: (v: string) => void) => () => wallet && set(wallet);
 
   const submit = () =>
-    a.run(async (say) => {
+    a.run(async (say, sent) => {
       if (!wallet) throw new Error("connect a wallet first");
       say("simulating against live state...");
-      const res = await createMatch(wallet, {
-        holder: holder.trim(),
-        buyer: buyer.trim(),
-        priceFloor: BigInt(floor),
-        priceCeil: BigInt(ceil),
-        stakeWei: parseUnits(stake, TOKEN_DECIMALS),
-        revealDeadline: revealAt.trim(),
-        inconclusiveDeadline: inconclusiveAt.trim(),
-      });
+      const res = await createMatch(
+        wallet,
+        {
+          holder: holder.trim(),
+          buyer: buyer.trim(),
+          priceFloor: BigInt(floor),
+          priceCeil: BigInt(ceil),
+          stakeWei: parseUnits(stake, TOKEN_DECIMALS),
+          revealDeadline: revealAt.trim(),
+          inconclusiveDeadline: inconclusiveAt.trim(),
+        },
+        { onSubmitted: sent },
+      );
       onCreated(res.matchId);
       return `match #${res.matchId} created`;
     });
+
+  /**
+   * create_match is the one action with no postcondition to watch, because
+   * there is no prior match to read and the id it will mint is a guess until
+   * it lands. So nothing on-chain can clear this notice by itself: the user
+   * checks the explorer and drops it, or opens the minted id directly.
+   */
+  if (a.inFlight) return <InFlightNotice inFlight={a.inFlight} onDismiss={a.dismiss} />;
 
   return (
     <div className="console-body">
@@ -66,36 +79,36 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
         <label className="form-row form-row--wide">
           <span>holder address</span>
           <div className="form-inline">
-            <input value={holder} onChange={(e) => setHolder(e.target.value)} placeholder="0x..." spellCheck={false} />
-            <button type="button" className="mini" disabled={!wallet} onClick={useMine(setHolder)}>use mine</button>
+            <input value={holder} onChange={(e) => setHolder(e.target.value)} placeholder="0x..." spellCheck={false} disabled={a.busy} />
+            <button type="button" className="mini" disabled={!wallet || a.busy} onClick={fillMine(setHolder)}>use mine</button>
           </div>
         </label>
         <label className="form-row form-row--wide">
           <span>buyer address</span>
           <div className="form-inline">
-            <input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="0x..." spellCheck={false} />
-            <button type="button" className="mini" disabled={!wallet} onClick={useMine(setBuyer)}>use mine</button>
+            <input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="0x..." spellCheck={false} disabled={a.busy} />
+            <button type="button" className="mini" disabled={!wallet || a.busy} onClick={fillMine(setBuyer)}>use mine</button>
           </div>
         </label>
         <label className="form-row">
           <span>price_floor</span>
-          <input value={floor} onChange={(e) => setFloor(e.target.value)} inputMode="numeric" />
+          <input value={floor} onChange={(e) => setFloor(e.target.value)} inputMode="numeric" disabled={a.busy} />
         </label>
         <label className="form-row">
           <span>price_ceil</span>
-          <input value={ceil} onChange={(e) => setCeil(e.target.value)} inputMode="numeric" />
+          <input value={ceil} onChange={(e) => setCeil(e.target.value)} inputMode="numeric" disabled={a.busy} />
         </label>
         <label className="form-row">
           <span>stake each ({TOKEN_SYMBOL})</span>
-          <input value={stake} onChange={(e) => setStake(e.target.value)} inputMode="decimal" />
+          <input value={stake} onChange={(e) => setStake(e.target.value)} inputMode="decimal" disabled={a.busy} />
         </label>
         <label className="form-row form-row--wide">
           <span>reveal_deadline</span>
-          <input value={revealAt} onChange={(e) => setRevealAt(e.target.value)} spellCheck={false} />
+          <input value={revealAt} onChange={(e) => setRevealAt(e.target.value)} spellCheck={false} disabled={a.busy} />
         </label>
         <label className="form-row form-row--wide">
           <span>inconclusive_deadline</span>
-          <input value={inconclusiveAt} onChange={(e) => setInconclusiveAt(e.target.value)} spellCheck={false} />
+          <input value={inconclusiveAt} onChange={(e) => setInconclusiveAt(e.target.value)} spellCheck={false} disabled={a.busy} />
         </label>
         <p className="turn-hint turn-hint--muted form-row--wide">
           Both deadlines are ISO timestamps and must carry a timezone, the Z on
@@ -110,6 +123,7 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
         label="CREATE MATCH"
         phase={a.phase}
         disabled={!wallet || !holder || !buyer}
+        hash={a.hash}
         onClick={submit}
       />
       {!wallet ? (

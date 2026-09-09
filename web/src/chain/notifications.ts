@@ -111,7 +111,7 @@ export function notificationsForMatch(
         title:
           recovery.id === "refund_before_lock"
             ? "Stakes can be refunded"
-            : "Settlement can be forced",
+            : "Settlement has not run",
         detail:
           recovery.id === "refund_before_lock"
             ? "No deal price was agreed and the lock deadline has passed. Anyone can return both stakes."

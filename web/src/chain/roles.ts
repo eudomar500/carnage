@@ -5,20 +5,30 @@ export type Role = "holder" | "buyer";
 /** What the connected wallet is, relative to this match. */
 export type Seat = Role | "observer";
 
-export type ActionId =
-  | "create_match"
-  | "commit"
-  | "fund"
-  | "anchor_claim"
-  | "propose_price"
-  | "reveal"
-  | "adjudicate"
-  | "claim"
-  | "claim_sink"
-  | "refund_before_lock"
-  | "force_settle"
-  | "propose_sink"
-  | "accept_sink";
+/**
+ * Every write the app can send, as a value rather than only a type.
+ *
+ * The attempt journal has to be able to walk all of them without a panel
+ * mounted, so that a record left behind by a reload is reconciled against
+ * live state wherever the user happens to be looking.
+ */
+export const ACTION_IDS = [
+  "create_match",
+  "commit",
+  "fund",
+  "anchor_claim",
+  "propose_price",
+  "reveal",
+  "adjudicate",
+  "claim",
+  "claim_sink",
+  "refund_before_lock",
+  "force_settle",
+  "propose_sink",
+  "accept_sink",
+] as const;
+
+export type ActionId = (typeof ACTION_IDS)[number];
 
 /** The zero address, which is pending_sink's empty value. */
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
