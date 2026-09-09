@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ACCEPT_WAIT_MS } from "../chain/actions";
 import type { Confirmation } from "../chain/confirm";
 import type { MatchState } from "../chain/contract";
 import { classifyFailure } from "../chain/errors";
-import { clearAttempt, readAttempt, writeAttempt } from "../chain/journal";
+import {
+  clearAttempt,
+  noteHash,
+  readAttempt,
+  writeAttempt,
+  type Attempt,
+} from "../chain/journal";
+import type { ActionId } from "../chain/roles";
 
 /**
  * Where one action currently stands.
@@ -21,12 +27,36 @@ export type ActionPhase =
   | { kind: "failed"; note: string; retryLabel: string }
   | { kind: "unconfirmed"; note: string; retryLabel: string };
 
+/**
+ * An attempt this page did not start, picked up from the journal.
+ *
+ * Only ever set for a record left behind by an earlier page load or a second
+ * tab. An action started in this session does not produce one, because the
+ * user is already watching it happen and the form they filled in is still on
+ * screen where they left it.
+ */
+export type InFlight = {
+  actionId: ActionId;
+  /** Null when the wallet never handed a hash back before the page went away. */
+  hash: string | null;
+  /** Epoch ms at which the attempt was first submitted. */
+  startedAt: number;
+};
+
 export type ActionRunner = {
   phase: ActionPhase;
   /** True whenever a send or a confirmation watch is in flight. */
   busy: boolean;
-  run: (fn: (say: (note: string) => void) => Promise<string>) => Promise<void>;
+  /** Non-null while an attempt recovered from the journal is being watched. */
+  inFlight: InFlight | null;
+  /** The current attempt's transaction hash, once there is one. */
+  hash: string | null;
+  run: (
+    fn: (say: (note: string) => void, sent: (hash: string) => void) => Promise<string>,
+  ) => Promise<void>;
   reset: () => void;
+  /** Gives up on a recovered attempt the user has decided is dead. */
+  dismiss: () => void;
 };
 
 export type ActionOptions = {
@@ -39,6 +69,34 @@ export type ActionOptions = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * How long a journaled attempt is treated as still alive after a reload.
+ *
+ * Deliberately far longer than the in-session watch window. Once the page has
+ * been reloaded there is a recorded hash and an explorer to check it against,
+ * so waiting costs nothing; putting the button back under a transaction that
+ * is merely slow is the move that costs something. Bradbury takes minutes when
+ * the validator set is being shuffled, and 90 seconds of patience is not an
+ * honest answer to that.
+ */
+export const RESUME_BUDGET_MS = 30 * 60_000;
+
+/**
+ * The journaled attempt worth resuming, read straight from storage.
+ *
+ * This runs during the first render rather than in an effect, and that is the
+ * whole point. The old code consulted the journal only after mount and after
+ * an await on get_match, so the first paint following a refresh was an idle
+ * button over a live transaction: exactly the screen that makes a user think
+ * their commit failed and send it again.
+ */
+function resumable(opts: ActionOptions): Attempt | null {
+  const prior = readAttempt(opts.matchId, opts.confirm.actionId);
+  if (!prior || prior.outcome !== "pending") return null;
+  if (Date.now() - prior.startedAt >= RESUME_BUDGET_MS) return null;
+  return prior;
+}
+
+/**
  * Drives one action from click to confirmed state change.
  *
  * The sequence is: disable on click -> check the change has not already
@@ -49,10 +107,35 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * flight, which is the whole point.
  */
 export function useAction(opts: ActionOptions): ActionRunner {
-  const [phase, setPhase] = useState<ActionPhase>({ kind: "idle" });
+  // Read once, at first render. See resumable() above for why this cannot
+  // wait for an effect.
+  const [journaled] = useState<Attempt | null>(() => resumable(opts));
+
+  const [phase, setPhase] = useState<ActionPhase>(() =>
+    journaled ? { kind: "pending", note: opts.confirm.pendingNote } : { kind: "idle" },
+  );
+  const [inFlight, setInFlight] = useState<InFlight | null>(() =>
+    journaled
+      ? {
+          actionId: opts.confirm.actionId,
+          hash: journaled.hash ?? null,
+          startedAt: journaled.startedAt,
+        }
+      : null,
+  );
+  const [hash, setHash] = useState<string | null>(journaled?.hash ?? null);
 
   const alive = useRef(false);
   const running = useRef(false);
+  /**
+   * Which attempt owns the hook right now.
+   *
+   * Bumped by every run and by every dismiss, so a watch loop that is asleep
+   * between polls can tell on waking that it has been superseded and must not
+   * write state belonging to somebody else's attempt.
+   */
+  const gen = useRef(0);
+  const hashRef = useRef<string | null>(journaled?.hash ?? null);
   const latest = useRef(opts);
   // Synced after render rather than during it. Nothing reads this until a
   // click or a timer fires, both of which happen after effects have flushed.
@@ -83,12 +166,12 @@ export function useAction(opts: ActionOptions): ActionRunner {
   }, []);
 
   const awaitLanding = useCallback(
-    async (c: Confirmation, deadline: number): Promise<boolean> => {
+    async (c: Confirmation, deadline: number, mine: () => boolean): Promise<boolean> => {
       if (!c.landed) return true;
       for (;;) {
-        if (!alive.current) return false;
+        if (!mine()) return false;
         const m = await readState();
-        if (!alive.current) return false;
+        if (!mine()) return false;
         if (m && c.landed(m)) return true;
 
         const left = deadline - Date.now();
@@ -96,6 +179,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         set({ kind: "pending", note: `${c.pendingNote} (${Math.ceil(left / 1000)}s left)` });
         await sleep(Math.min(c.pollMs, left));
       }
+      if (!mine()) return false;
       // One last look: the change may have landed during the final sleep.
       const last = await readState();
       return Boolean(last && c.landed(last));
@@ -104,29 +188,51 @@ export function useAction(opts: ActionOptions): ActionRunner {
   );
 
   const settle = useCallback(
-    async (c: Confirmation, matchId: bigint | number, successNote: string) => {
+    async (
+      c: Confirmation,
+      matchId: bigint | number,
+      successNote: string,
+      mine: () => boolean,
+    ) => {
       set({ kind: "pending", note: c.pendingNote });
-      const landed = await awaitLanding(c, Date.now() + c.windowMs);
-      if (!alive.current) return;
+      const landed = await awaitLanding(c, Date.now() + c.windowMs, mine);
+      if (!mine()) return;
       if (landed) {
         clearAttempt(matchId, c.actionId);
+        setInFlight(null);
         set({ kind: "confirmed", note: successNote });
         return;
       }
-      writeAttempt(matchId, c.actionId, "unconfirmed");
+      writeAttempt(matchId, c.actionId, "unconfirmed", undefined, hashRef.current ?? undefined);
       set({ kind: "unconfirmed", note: c.unconfirmedNote, retryLabel: c.retryLabel });
     },
     [awaitLanding, set],
   );
 
   const run = useCallback(
-    async (fn: (say: (note: string) => void) => Promise<string>) => {
+    async (
+      fn: (say: (note: string) => void, sent: (hash: string) => void) => Promise<string>,
+    ) => {
       if (running.current) return;
+      const myGen = ++gen.current;
+      const mine = () => alive.current && gen.current === myGen;
       running.current = true;
 
       const { matchId, confirm } = latest.current;
+      // A retry is a new attempt. Anything the last one left behind, including
+      // its hash and its recovered in-flight notice, belongs to that one.
+      hashRef.current = null;
+      setHash(null);
+      setInFlight(null);
       // Disabled on the click itself, before the first await.
       set({ kind: "submitting", note: "checking preconditions..." });
+
+      const sent = (h: string) => {
+        if (gen.current !== myGen) return;
+        hashRef.current = h;
+        noteHash(matchId, confirm.actionId, h);
+        if (alive.current) setHash(h);
+      };
 
       try {
         // If the change is already on-chain there is nothing to send. This is
@@ -134,7 +240,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         // first wins and the second caller spends nothing.
         if (confirm.landed) {
           const before = await readState();
-          if (!alive.current) return;
+          if (!mine()) return;
           if (before && confirm.landed(before)) {
             clearAttempt(matchId, confirm.actionId);
             set({ kind: "confirmed", note: `${confirm.confirmedNote} (already on-chain)` });
@@ -146,25 +252,31 @@ export function useAction(opts: ActionOptions): ActionRunner {
 
         let note: string;
         try {
-          note = await fn((n) => set({ kind: "submitting", note: n }));
+          note = await fn((n) => {
+            if (mine()) set({ kind: "submitting", note: n });
+          }, sent);
         } catch (err) {
           const failure = classifyFailure(err);
+          if (!mine()) return;
           // With no postcondition there is nothing to check state against, so
           // a throw is the final word rather than something to watch out.
           if (failure.nothingSent || !confirm.landed) {
-            writeAttempt(matchId, confirm.actionId, "failed");
+            // Nothing reached the network, so there is no attempt to recover
+            // and no reason for the next page load to say there is.
+            clearAttempt(matchId, confirm.actionId);
             set({ kind: "failed", note: failure.message, retryLabel: confirm.retryLabel });
             return;
           }
           // The transaction reached the network and we lost sight of it. The
           // only honest move is to go and look at contract state.
-          await settle(confirm, matchId, confirm.confirmedNote);
+          await settle(confirm, matchId, confirm.confirmedNote, mine);
           return;
         }
 
-        await settle(confirm, matchId, note);
+        if (!mine()) return;
+        await settle(confirm, matchId, note, mine);
       } finally {
-        running.current = false;
+        if (gen.current === myGen) running.current = false;
       }
     },
     [readState, set, settle],
@@ -174,9 +286,14 @@ export function useAction(opts: ActionOptions): ActionRunner {
    * Picks an attempt back up after a reload or in a second tab.
    *
    * Contract state cannot distinguish "nobody has tried yet" from "a round was
-   * fired and discarded", so the journal supplies that. Inside the original
-   * budget we resume watching, because the transaction may still be live;
-   * past it we offer the retry.
+   * fired and discarded", so the journal supplies that. The first render has
+   * already put the in-flight state on screen from the record alone; this is
+   * what checks it against the chain and takes it back down again.
+   *
+   * Three outcomes, in order. The change is already visible, so the record is
+   * dropped and the confirmed state shown. Or it is not visible and the
+   * attempt is still inside its budget, so the watch resumes. Or the budget is
+   * spent, and only then is a retry put on offer.
    */
   useEffect(() => {
     const { matchId, confirm } = latest.current;
@@ -185,48 +302,77 @@ export function useAction(opts: ActionOptions): ActionRunner {
     const prior = readAttempt(matchId, confirm.actionId);
     if (!prior || prior.outcome === "confirmed") return;
 
-    let cancelled = false;
+    const myGen = ++gen.current;
+    const mine = () => alive.current && gen.current === myGen;
+
     void (async () => {
       if (running.current) return;
       running.current = true;
       try {
         const now = await readState();
-        if (cancelled || !alive.current) return;
+        if (!mine()) return;
         if (now && confirm.landed!(now)) {
           clearAttempt(matchId, confirm.actionId);
+          setInFlight(null);
+          set({ kind: "confirmed", note: confirm.confirmedNote });
           return;
         }
 
-        const budget = confirm.windowMs + ACCEPT_WAIT_MS;
-        if (prior.outcome === "pending" && Date.now() - prior.startedAt < budget) {
+        if (prior.outcome === "pending" && Date.now() - prior.startedAt < RESUME_BUDGET_MS) {
           set({ kind: "pending", note: confirm.pendingNote });
-          const landed = await awaitLanding(confirm, prior.startedAt + budget);
-          if (cancelled || !alive.current) return;
+          const landed = await awaitLanding(confirm, prior.startedAt + RESUME_BUDGET_MS, mine);
+          if (!mine()) return;
           if (landed) {
             clearAttempt(matchId, confirm.actionId);
+            setInFlight(null);
             set({ kind: "confirmed", note: confirm.confirmedNote });
             return;
           }
         }
 
-        writeAttempt(matchId, confirm.actionId, "unconfirmed", prior.startedAt);
+        writeAttempt(matchId, confirm.actionId, "unconfirmed", prior.startedAt, prior.hash);
+        setInFlight(null);
         set({ kind: "unconfirmed", note: confirm.unconfirmedNote, retryLabel: confirm.retryLabel });
       } finally {
-        running.current = false;
+        if (gen.current === myGen) running.current = false;
       }
     })();
 
     return () => {
-      cancelled = true;
+      // Supersede this watch so a loop asleep between polls stops on waking.
+      gen.current += 1;
     };
   }, [awaitLanding, readState, set]);
 
   const reset = useCallback(() => set({ kind: "idle" }), [set]);
 
+  /**
+   * The escape hatch for an attempt that really did die.
+   *
+   * A transaction the wallet dropped, or one the chain threw away, never
+   * changes state, so nothing on-chain will ever clear its record. Without
+   * this the notice would outlive the transaction it describes. It leaves the
+   * user in the same place the expired budget would have: a retry, labelled as
+   * one, with the record gone so the next reload starts clean.
+   */
+  const dismiss = useCallback(() => {
+    const { matchId, confirm } = latest.current;
+    gen.current += 1;
+    running.current = false;
+    hashRef.current = null;
+    clearAttempt(matchId, confirm.actionId);
+    setInFlight(null);
+    setHash(null);
+    set({ kind: "unconfirmed", note: confirm.unconfirmedNote, retryLabel: confirm.retryLabel });
+  }, [set]);
+
   return {
     phase,
     busy: phase.kind === "submitting" || phase.kind === "pending",
+    inFlight,
+    hash,
     run,
     reset,
+    dismiss,
   };
 }

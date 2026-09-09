@@ -1,3 +1,4 @@
+import { explorerTxUrl } from "../chain/txlog";
 import type { ActionPhase } from "../hooks/useAction";
 
 /**
@@ -13,11 +14,14 @@ export default function ActionButton({
   label,
   phase,
   disabled,
+  hash,
   onClick,
 }: {
   label: string;
   phase: ActionPhase;
   disabled?: boolean;
+  /** The current attempt's transaction hash, once the wallet has broadcast. */
+  hash?: string | null;
   onClick: () => void;
 }) {
   const busy = phase.kind === "submitting" || phase.kind === "pending";
@@ -42,9 +46,31 @@ export default function ActionButton({
         {text}
       </button>
       {busy ? <p className="act-step act-step--muted">{phase.note}</p> : null}
+      {busy && hash ? <TxLine hash={hash} /> : null}
       {done ? <p className="act-step">{phase.note}</p> : null}
       {phase.kind === "failed" ? <p className="act-err">{phase.note}</p> : null}
       {phase.kind === "unconfirmed" ? <p className="act-warn">{phase.note}</p> : null}
     </>
+  );
+}
+
+/**
+ * The hash while the wait is still running.
+ *
+ * Shown here as well as in the reload notice, because the wait is long enough
+ * that a user watching it happen wants the same reassurance a returning one
+ * gets: something real was sent, and here is where to look at it.
+ */
+function TxLine({ hash }: { hash: string }) {
+  const url = explorerTxUrl(hash);
+  return (
+    <p className="act-step act-step--muted act-tx">
+      tx <code>{hash.slice(0, 10)}...{hash.slice(-8)}</code>
+      {url ? (
+        <a className="inflight-link" href={url} target="_blank" rel="noreferrer">
+          CHECK THE EXPLORER
+        </a>
+      ) : null}
+    </p>
   );
 }

@@ -11,6 +11,8 @@ import Replay from "../components/Replay";
 import { Vault } from "../components/Icons";
 import { useMatch } from "../hooks/useMatch";
 import { claimGate, isDishonest, isResolved } from "../chain/contract";
+import { noteObserved } from "../chain/grace";
+import { reconcile } from "../chain/journal";
 import { seatOf } from "../chain/roles";
 import { derivePhase, isStrike, judgeMood } from "../chain/phase";
 import { CARNAGE_ADDRESS } from "../chain/client";
@@ -80,6 +82,29 @@ export default function MatchApp({
   useEffect(() => () => { if (reactTimer.current) clearTimeout(reactTimer.current); }, []);
 
   const wallet = nav.wallet;
+
+  /**
+   * Journal upkeep, driven off the match feed rather than off any one panel.
+   *
+   * A panel only sees its own action land if it is still mounted when that
+   * happens, and it usually is not: the moment the change registers,
+   * deriveTurn stops offering the step and takes the panel off the screen. So
+   * every successful read sweeps the journal and drops the records whose
+   * postcondition is now satisfied. Without this an in-flight notice could
+   * outlive the transaction it describes and greet the next visit to the
+   * match with a warning about something that finished hours ago.
+   *
+   * noteObserved rides along for the same reason. The contract does not
+   * publish adjudicated_at, so the only clock the force-settle gate can use is
+   * the first moment this browser saw a verdict sitting unsettled, and that
+   * has to be written down wherever the match is read.
+   */
+  useEffect(() => {
+    const accepted = preview ? null : view?.accepted ?? null;
+    if (!accepted) return;
+    reconcile(accepted, seatOf(accepted, wallet) === "buyer" ? "buyer" : "holder");
+    noteObserved(accepted);
+  }, [preview, view, wallet]);
 
   const m = effective;
   const live = Boolean(m && phase);
