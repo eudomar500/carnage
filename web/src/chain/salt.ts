@@ -12,7 +12,9 @@ import type { Role } from "./roles";
  * amount of cleared browser state.
  *
  * The signature itself is the salt preimage. It never leaves this module, is
- * never logged, and is never rendered.
+ * never logged, and is never rendered. There is no export path for it and no
+ * backup file: signing again is the only way a salt comes back, which is why
+ * the message below is fixed and match-bound.
  */
 
 const SALT_CACHE = new Map<string, `0x${string}`>();
@@ -62,54 +64,4 @@ export async function deriveSalt(
   const salt = keccak256(signature as `0x${string}`);
   SALT_CACHE.set(key, salt);
   return salt;
-}
-
-/** Seeds the cache from a recovery ticket so reveal needs no signature. */
-export function primeSalt(
-  matchId: bigint | number,
-  role: Role,
-  account: string,
-  salt: `0x${string}`,
-): void {
-  SALT_CACHE.set(cacheKey(matchId, role, account), salt);
-}
-
-export type RecoveryTicket = {
-  carnage: "reveal-ticket";
-  contract: string;
-  match_id: string;
-  role: Role;
-  account: string;
-  state: string;
-  salt: `0x${string}`;
-};
-
-/**
- * The optional belt-and-braces export. Holds state + salt (never the
- * signature), so it is enough to reveal without the original wallet's
- * signing behaviour cooperating.
- */
-export function buildTicket(
-  matchId: bigint | number,
-  role: Role,
-  account: string,
-  state: bigint,
-  salt: `0x${string}`,
-): RecoveryTicket {
-  return {
-    carnage: "reveal-ticket",
-    contract: CARNAGE_ADDRESS,
-    match_id: `${matchId}`,
-    role,
-    account: account.toLowerCase(),
-    state: `${state}`,
-    salt,
-  };
-}
-
-export function parseTicket(raw: string): RecoveryTicket {
-  const t = JSON.parse(raw);
-  if (t?.carnage !== "reveal-ticket") throw new Error("not a Carnage reveal ticket");
-  if (!t.salt || !t.state || !t.role) throw new Error("ticket is missing fields");
-  return t as RecoveryTicket;
 }

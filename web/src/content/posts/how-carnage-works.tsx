@@ -63,8 +63,15 @@ export default function Body() {
       <h2>Step three: here is your play, the claim</h2>
 
       <p>
-        Now the players negotiate a deal price, and each one makes a public
-        natural-language statement: the claim. And this is the most important
+        First the two players agree a deal price. That happens by talking, not
+        by guessing: they settle on a number between themselves, off the chain,
+        and then each proposes that same number on-chain, where it locks only
+        if the two proposals match. Nothing computes the price for you.
+      </p>
+
+      <p>
+        Then each one makes a public natural-language statement: the claim. And
+        this is the most important
         thing to understand about Carnage: the claim is free text that you
         write. There are no preset options, nothing is predetermined. You write
         whatever you want, and that is where all your strategy is.
@@ -108,6 +115,13 @@ export default function Body() {
         the sealed fingerprint from step one, so nobody can reveal a different
         number than the one they committed to. Now the truth is on the table:
         the real secret, and the public claim, side by side.
+      </p>
+
+      <p>
+        You do not need to have saved anything for this. The app reopens your
+        envelope by having you sign the same message you signed when you sealed
+        it, so the key comes back on its own. All you have to remember is the
+        number you committed.
       </p>
 
       <h2>Step five: the jury decides, and this is what makes GenLayer unique</h2>
