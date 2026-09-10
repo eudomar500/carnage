@@ -41,7 +41,22 @@ export function useMatch(matchId: number | null): MatchFeed {
   const [loading, setLoading] = useState(matchId !== null);
   const [tick, setTick] = useState(0);
 
-  const alive = useRef(true);
+  /**
+   * The polling run the hook is currently on.
+   *
+   * This used to be one shared `alive` boolean, and that is what let a loop
+   * come back from the dead. React runs the cleanup and then the next setup
+   * back to back, so a cleanup that set the flag false was immediately
+   * followed by a setup that set it true again. A loop parked on an in-flight
+   * read woke up after both, found the flag true, and rescheduled itself, so
+   * the old match kept polling forever alongside the new one and the two took
+   * turns writing `view`. That is the alternating match the console showed.
+   *
+   * A token per run cannot be undone by the run that replaces it. Each loop,
+   * and each read, holds the token it started under and answers only to that
+   * one, so a cleanup retires exactly its own run and nothing else.
+   */
+  const run = useRef<{ cancelled: boolean }>({ cancelled: false });
   const hasView = useRef(false);
   const delay = useRef(POLL_MS);
   /** Collapses overlapping reads so the watcher and the poll share one call. */
@@ -49,9 +64,14 @@ export function useMatch(matchId: number | null): MatchFeed {
 
   const read = useCallback(async (): Promise<MatchState | null> => {
     if (matchId === null) return null;
+    // Taken at the start, not read at the end. A read that outlives its own
+    // run has to know that, or it writes state describing a match the page
+    // has already left. The value it returns is unaffected either way: the
+    // caller asked for a read and gets one, only the setters are skipped.
+    const mine = run.current;
     try {
       const next = await getMatchView(matchId);
-      if (!alive.current) return next.accepted;
+      if (mine.cancelled) return next.accepted;
       hasView.current = true;
       setView(next);
       setError(null);
@@ -61,7 +81,7 @@ export function useMatch(matchId: number | null): MatchFeed {
       delay.current = POLL_MS;
       return next.accepted;
     } catch (e: any) {
-      if (!alive.current) return null;
+      if (mine.cancelled) return null;
       if (isUnknownMatch(e)) {
         hasView.current = false;
         setNotFound(true);
@@ -81,14 +101,17 @@ export function useMatch(matchId: number | null): MatchFeed {
       }
       return null;
     } finally {
-      if (alive.current) setLoading(false);
+      if (!mine.cancelled) setLoading(false);
     }
   }, [matchId]);
 
   const refresh = useCallback((): Promise<MatchState | null> => {
     if (inflight.current) return inflight.current;
+    // A promise only retires its own entry. One that settles after a match
+    // change has already been replaced in the slot, and clearing it there
+    // would drop a live read belonging to the run that came after.
     const p = read().finally(() => {
-      inflight.current = null;
+      if (inflight.current === p) inflight.current = null;
     });
     inflight.current = p;
     return p;
@@ -100,7 +123,12 @@ export function useMatch(matchId: number | null): MatchFeed {
     // not cost a render.
     if (matchId === null) return;
 
-    alive.current = true;
+    const mine = { cancelled: false };
+    run.current = mine;
+    // The previous run's read is not this run's read. Sharing it through the
+    // dedup handed the new match the old match's state as its first answer,
+    // which is the wrong match to judge a postcondition against.
+    inflight.current = null;
     hasView.current = false;
     delay.current = POLL_MS;
     // Switching match id must not leave the previous match's state on screen
@@ -112,13 +140,13 @@ export function useMatch(matchId: number | null): MatchFeed {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const loop = async () => {
       await refresh();
-      if (!alive.current) return;
+      if (mine.cancelled) return;
       timer = setTimeout(loop, delay.current);
     };
     void loop();
 
     return () => {
-      alive.current = false;
+      mine.cancelled = true;
       if (timer) clearTimeout(timer);
     };
   }, [matchId, refresh]);

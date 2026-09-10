@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LandingPage from "./pages/LandingPage";
 import MatchApp from "./pages/MatchApp";
 import PostPage from "./pages/PostPage";
@@ -52,12 +52,70 @@ export default function App() {
     scrollAfterPaint(hash);
   }, []);
 
-  const onHome = useCallback((hash?: string) => go({ view: "landing" }, hash), [go]);
-  const onLaunch = useCallback(() => go({ view: "app", matchId: null }), [go]);
+  /**
+   * True while the view belongs to a match the user picked out of the bell.
+   *
+   * A create started before that click keeps running, and when it lands it
+   * used to call onCreated and drag the view onto the new match, in the middle
+   * of whatever the user had deliberately gone to do. Pressing a notification
+   * is an explicit choice about where to be, so it wins over any navigation
+   * the app would otherwise perform on its own. The new match is already in
+   * the bell and waits there until it is chosen too.
+   *
+   * A ref, not state: nothing renders from it, and it has to be readable by a
+   * callback fired from a promise that outlived the panel that started it.
+   */
+  const bellPinned = useRef(false);
+
+  const onHome = useCallback(
+    (hash?: string) => {
+      bellPinned.current = false;
+      go({ view: "landing" }, hash);
+    },
+    [go],
+  );
+  const onLaunch = useCallback(() => {
+    bellPinned.current = false;
+    go({ view: "app", matchId: null });
+  }, [go]);
   const onEntry = onLaunch;
-  const onOpenMatch = useCallback((id: number) => go({ view: "app", matchId: id }), [go]);
-  const onOpenPost = useCallback((slug: string) => go({ view: "post", slug }), [go]);
-  const onCreated = useCallback((id: bigint) => go({ view: "app", matchId: Number(id) }), [go]);
+  const onOpenMatch = useCallback(
+    (id: number) => {
+      bellPinned.current = false;
+      go({ view: "app", matchId: id });
+    },
+    [go],
+  );
+  const onOpenPost = useCallback(
+    (slug: string) => {
+      bellPinned.current = false;
+      go({ view: "post", slug });
+    },
+    [go],
+  );
+
+  /**
+   * The bell's own navigation. Same move as onOpenMatch, plus the pin.
+   *
+   * Wired only into `nav`, which reaches NotificationBell and nothing else, so
+   * opening a match by id from the entry screen still behaves exactly as it
+   * did and a create started there still lands the user on the new match.
+   */
+  const onOpenFromBell = useCallback(
+    (id: number) => {
+      go({ view: "app", matchId: id });
+      bellPinned.current = true;
+    },
+    [go],
+  );
+
+  const onCreated = useCallback(
+    (id: bigint) => {
+      if (bellPinned.current) return;
+      go({ view: "app", matchId: Number(id) });
+    },
+    [go],
+  );
 
   // Back and forward re-derive the whole route, so history stays authoritative
   // over anything the page thinks it is showing.
@@ -95,7 +153,7 @@ export default function App() {
   const notifications = useNotifications(wallet);
   const nav: NavShell = {
     wallet, connecting, onConnect, onDisconnect, onHome, onLaunch,
-    notifications, onOpenMatch,
+    notifications, onOpenMatch: onOpenFromBell,
   };
 
   // An unknown slug is a typo or a stale link. The landing carries the list of
