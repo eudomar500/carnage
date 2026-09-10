@@ -222,6 +222,12 @@ export default function ConnectionCheck() {
       <pre className="log">{writeLog.join("\n") || "no wallet activity yet"}</pre>
 
       <h2>raw get_match({MATCH_ID})</h2>
+      <p className="sub">
+        Field names below are the contract's own and are printed unchanged.
+        One is worth reading twice: holder_claimed and buyer_claimed mean that
+        side anchored its natural-language claim, not that it withdrew money.
+        The payout fields are holder_claimable, buyer_claimable and paid_total.
+      </p>
       <pre className="log">{matchJson || "loading..."}</pre>
     </div>
   );
