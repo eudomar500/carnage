@@ -68,7 +68,7 @@ export type ScanOutcome = {
  * Bradbury caps eth_getLogs ranges. Measured directly against the node: 20000
  * blocks and wider are rejected outright, 10000 is accepted.
  */
-const WINDOW = 10_000n;
+export const WINDOW = 10_000n;
 
 /**
  * How far back to look before giving up.
@@ -100,15 +100,18 @@ const RETRY_BASE_MS = 800;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The consensus event this scan depends on, taken from the chain definition
+ * The consensus event every scan depends on, taken from the chain definition
  * rather than trusted blindly.
+ *
+ * Exported because the lab walks the same index for a different question, and
+ * two copies of this check would drift the moment the chain renamed anything.
  *
  * The filter below is only meaningful if `recipient` is an indexed topic. If a
  * future chain release renames the event or unindexes that field, this returns
  * null and the feature degrades to "not available" instead of silently
  * matching nothing and looking like a match with no transactions.
  */
-function newTransactionEvent(): AbiEvent | null {
+export function newTransactionEvent(): AbiEvent | null {
   const entries = (CHAIN.consensusMainContract?.abi ?? []) as any[];
   const found = entries.find((e) => e?.type === "event" && e?.name === "NewTransaction");
   if (!found) return null;
@@ -173,7 +176,7 @@ async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
  * decoder returns a Map, which is why the SDK's own txDataDecoded.callData
  * looks empty when it is serialised.
  */
-function decodeCall(txCalldata: unknown): { method: string; args: unknown[] } | null {
+export function decodeCall(txCalldata: unknown): { method: string; args: unknown[] } | null {
   if (typeof txCalldata !== "string" || !txCalldata.startsWith("0x")) return null;
   try {
     const parts = fromRlp(txCalldata as `0x${string}`, "hex");
@@ -190,7 +193,7 @@ function decodeCall(txCalldata: unknown): { method: string; args: unknown[] } | 
 }
 
 /** Runs `fn` over `items` with a fixed number of workers, preserving order. */
-async function pool<T, R>(items: T[], workers: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function pool<T, R>(items: T[], workers: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
   await Promise.all(

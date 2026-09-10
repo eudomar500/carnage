@@ -1834,11 +1834,20 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 }
 .lab-caveat strong { color: var(--amber); }
 
-.lab-open { border: 1px solid rgba(201, 162, 39, 0.35); padding: 20px; margin-top: 26px; }
-.lab-open-tag {
-  display: inline-block; font-size: 10px; letter-spacing: 0.16em; color: var(--amber);
-  border: 1px solid var(--amber); padding: 3px 8px; margin: 0 0 12px;
+/* The live headline. First number on the page, and it is read, never typed. */
+.lab-headline { font-size: 15px; line-height: 1.6; color: var(--ink); margin: 16px 0 10px; }
+.lab-headline strong { color: var(--crimson); }
+
+/* Measurement or example. A reader should never have to work out which. */
+.lab-flag {
+  display: inline-block; font-size: 9.5px; letter-spacing: 0.16em;
+  border: 1px solid currentColor; padding: 3px 8px; margin: 0 0 12px;
 }
+.lab-flag--live { color: var(--green); }
+.lab-flag--case { color: var(--steel-dim); }
+
+/* A case study is boxed, so it reads as a specimen rather than a section. */
+.lab-case { border: 1px solid rgba(255, 255, 255, 0.14); padding: 20px; }
 
 /* label distribution */
 .lab-bars { display: flex; flex-direction: column; gap: 9px; margin: 4px 0 8px; }
@@ -1935,6 +1944,39 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .lab-drill-label--unsupported { color: var(--steel-dim); }
 .lab-drill-label--ambiguous { color: var(--amber); }
 .lab-drill-none { font-size: 10px; color: var(--ink-faint); }
+
+/* first load. Never a screen of zeros: say what is happening instead. */
+.lab-loading { border: 1px solid rgba(255, 255, 255, 0.1); padding: 22px; }
+.lab-loading-line {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px; letter-spacing: 0.04em; color: var(--ink); margin: 0;
+}
+.lab-loading-dot {
+  width: 9px; height: 9px; flex: none; border-radius: 50%;
+  background: var(--crimson); animation: lab-pulse 1.1s ease-in-out infinite;
+}
+@keyframes lab-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-loading-dot { animation: none; opacity: 1; }
+}
+
+/* per match proof. The hash is the point of the whole page, so it is not
+   tucked into a tooltip or a footnote. */
+.lab-proof {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 10.5px; letter-spacing: 0.04em; color: var(--ink-faint);
+  margin: 10px 0 0; padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.lab-proof-tag {
+  font-size: 9.5px; letter-spacing: 0.14em; color: var(--steel-dim);
+  border: 1px solid var(--steel-dim); padding: 1px 6px;
+}
+.lab-proof-hash { font-size: 10.5px; color: var(--ink-dim); word-break: break-all; }
+.lab-proof--waiting { color: var(--ink-faint); font-style: italic; }
 
 .lab-foot { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px; margin-top: 20px; }
 

@@ -11,7 +11,9 @@ import type { MatchConvergence } from "../../chain/labs";
  * round, which is why this is a button rather than something the page does on
  * its own, and why it is pointed at a single match.
  *
- * The trace returns both parties' labels together, holder first.
+ * Each label is read from beside its own field name in the execution result,
+ * so the party it belongs to is what the chain says rather than a guess from
+ * the order the words happened to appear in.
  */
 export default function RoundDrill({ match }: { match: MatchConvergence }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +55,7 @@ export default function RoundDrill({ match }: { match: MatchConvergence }) {
                 <div className="lab-drill-tx" key={r.txId}>
                   <p className="lab-drill-head">
                     <span className={`lab-drill-tag${r.applied ? "" : " lab-drill-tag--dropped"}`}>
-                      {r.applied ? "APPLIED" : "DISCARDED"}
+                      {r.applied ? "VERDICT WRITTEN" : "THROWN AWAY"}
                     </span>
                     attempt {i + 1}, <code>{r.txId.slice(0, 10)}...{r.txId.slice(-8)}</code>
                     {url ? (
@@ -66,18 +68,8 @@ export default function RoundDrill({ match }: { match: MatchConvergence }) {
                     {r.rounds.map((round) => (
                       <div className="lab-drill-round" key={round.round}>
                         <span className="lab-drill-n">round {round.round}</span>
-                        {round.labels.length ? (
-                          round.labels.map((l, k) => (
-                            <span
-                              key={`${l}-${k}`}
-                              className={`lab-drill-label lab-drill-label--${l.toLowerCase()}`}
-                            >
-                              {k === 0 ? "H" : "B"} {l}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="lab-drill-none">no label recoverable</span>
-                        )}
+                        <Party seat="HOLDER" label={round.holder} />
+                        <Party seat="BUYER" label={round.buyer} />
                       </div>
                     ))}
                   </div>
@@ -88,5 +80,14 @@ export default function RoundDrill({ match }: { match: MatchConvergence }) {
         )
       ) : null}
     </div>
+  );
+}
+
+function Party({ seat, label }: { seat: string; label: string | null }) {
+  if (!label) return <span className="lab-drill-none">{seat} not recoverable</span>;
+  return (
+    <span className={`lab-drill-label lab-drill-label--${label.toLowerCase()}`}>
+      {seat} {label}
+    </span>
   );
 }

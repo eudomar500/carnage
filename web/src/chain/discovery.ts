@@ -130,6 +130,7 @@ async function walk(
   from: number,
   limit: number,
   keep: (m: MatchState, wallet: string) => boolean = walletIsInvolved,
+  onFound?: (kept: number) => void,
 ): Promise<{ found: MatchState[]; scannedTo: number; capped: boolean; degraded: string | null }> {
   const found: MatchState[] = [];
   let scannedTo = from - 1;
@@ -155,6 +156,7 @@ async function walk(
       scannedTo = r.id;
       if (r.match && keep(r.match, wallet)) found.push(r.match);
     }
+    onFound?.(found.length);
     id += batch.length;
   }
 
@@ -225,10 +227,16 @@ export async function discoverMatches(wallet: string): Promise<DiscoveryResult> 
  *
  * The walk, the cap and the honest reporting of both are the same ones the
  * bell uses. Only the filter and the cache key differ.
+ *
+ * `onFound` reports how many matches have been read so far. The lab shows that
+ * count while it waits, because the walk is one slow read per id and a page
+ * that sits on zeros for several seconds looks broken rather than busy.
  */
 const ALL_KEY = "all";
 
-export async function discoverAllMatches(): Promise<DiscoveryResult> {
+export async function discoverAllMatches(
+  onFound?: (kept: number) => void,
+): Promise<DiscoveryResult> {
   const cached = readCache(ALL_KEY);
   const fresh = cached !== null && Date.now() - cached.at < CACHE_TTL_MS;
 
@@ -241,6 +249,7 @@ export async function discoverAllMatches(): Promise<DiscoveryResult> {
         if (r.error) degraded = "a read failed, so some matches may be out of date";
         else if (r.match) known.push(r.match);
       }
+      onFound?.(known.length);
     }
     const ahead = await walk(ALL_KEY, cached.scannedTo + 1, LOOKAHEAD, () => true);
     const matches = [...known, ...ahead.found].sort((a, b) => Number(a.match_id - b.match_id));
@@ -254,7 +263,13 @@ export async function discoverAllMatches(): Promise<DiscoveryResult> {
     return { ...result, matches };
   }
 
-  const { found, scannedTo, capped, degraded } = await walk(ALL_KEY, 1, MAX_SCAN_IDS, () => true);
+  const { found, scannedTo, capped, degraded } = await walk(
+    ALL_KEY,
+    1,
+    MAX_SCAN_IDS,
+    () => true,
+    onFound,
+  );
   const result: Discovery = {
     ids: found.map((m) => Number(m.match_id)),
     scannedTo,
