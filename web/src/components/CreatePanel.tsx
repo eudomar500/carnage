@@ -2,6 +2,7 @@ import { useState } from "react";
 import { parseUnits } from "viem";
 import { createMatch } from "../chain/actions";
 import { confirmationFor } from "../chain/confirm";
+import { CREATE_KEY_ID, noteTarget } from "../chain/journal";
 import { useAction } from "../hooks/useAction";
 import ActionButton from "./ActionButton";
 import InFlightNotice from "./InFlight";
@@ -38,7 +39,10 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
   // create_match has no prior match to watch, so the action layer proves its
   // own outcome by scanning for the minted id and there is no postcondition
   // for the watcher to poll.
-  const a = useAction({ matchId: 0, confirm: confirmationFor("create_match", "holder") });
+  const a = useAction({
+    matchId: CREATE_KEY_ID,
+    confirm: confirmationFor("create_match", "holder"),
+  });
 
   const fillMine = (set: (v: string) => void) => () => wallet && set(wallet);
 
@@ -57,7 +61,13 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
           revealDeadline: revealAt.trim(),
           inconclusiveDeadline: inconclusiveAt.trim(),
         },
-        { onSubmitted: sent },
+        {
+          onSubmitted: sent,
+          // Written before the send, so a tab that navigates away mid-create
+          // still leaves the sweep something it can recognise as landed.
+          onPredicted: (id) =>
+            noteTarget(CREATE_KEY_ID, "create_match", Number(id)),
+        },
       );
       onCreated(res.matchId);
       return `match #${res.matchId} created`;

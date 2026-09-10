@@ -6,6 +6,7 @@ import {
   clearAttempt,
   noteHash,
   readAttempt,
+  subscribe,
   writeAttempt,
   type Attempt,
 } from "../chain/journal";
@@ -154,10 +155,14 @@ export function useAction(opts: ActionOptions): ActionRunner {
   const gen = useRef(0);
   const hashRef = useRef<string | null>(journaled?.hash ?? null);
   const latest = useRef(opts);
-  // Synced after render rather than during it. Nothing reads this until a
-  // click or a timer fires, both of which happen after effects have flushed.
+  /** Mirrors `inFlight` so the journal listener can read it without a closure. */
+  const inFlightRef = useRef<InFlight | null>(inFlight);
+  // Synced after render rather than during it. Nothing reads these until a
+  // click, a timer or a journal change fires, all of which happen after
+  // effects have flushed.
   useEffect(() => {
     latest.current = opts;
+    inFlightRef.current = inFlight;
   });
 
   useEffect(() => {
@@ -442,6 +447,40 @@ export function useAction(opts: ActionOptions): ActionRunner {
       gen.current += 1;
     };
   }, [awaitLanding, isDead, markDiscarded, readState, set]);
+
+  /**
+   * Retires a recovered notice the moment its record goes away.
+   *
+   * The app-level sweep, or another tab, can clear this attempt while the
+   * panel showing it is mounted. Without this the panel kept rendering an
+   * in-flight notice for a record that no longer existed, because `inFlight`
+   * is React state seeded once at mount and nothing told it to look again.
+   * That was the visible half of the orphaned-create bug: the sweep had done
+   * its job and the screen did not know.
+   *
+   * Deliberately narrow. It only ever retires a notice recovered from the
+   * journal, so it cannot disturb a run this page is driving, which writes and
+   * clears its own record as part of the normal sequence.
+   */
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (!alive.current) return;
+        // An attempt this page is driving writes and clears its own record as
+        // part of the normal sequence, and must not be disturbed by hearing
+        // about it. Only a recovered notice is ours to retire here.
+        if (running.current) return;
+        if (!inFlightRef.current) return;
+        const { matchId, confirm } = latest.current;
+        if (readAttempt(matchId, confirm.actionId)) return;
+        // Supersede any watch still polling for the attempt that just went.
+        gen.current += 1;
+        inFlightRef.current = null;
+        setInFlight(null);
+        setPhase({ kind: "idle" });
+      }),
+    [],
+  );
 
   const reset = useCallback(() => set({ kind: "idle" }), [set]);
 

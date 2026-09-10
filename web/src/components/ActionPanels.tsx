@@ -16,6 +16,7 @@ import {
 import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
 import { confirmationFor } from "../chain/confirm";
 import { forceSettleGate, formatWait } from "../chain/grace";
+import { noteSinkTarget } from "../chain/journal";
 import { deriveSalt } from "../chain/salt";
 import { sinkTransferPending, ZERO_ADDRESS, type Role } from "../chain/roles";
 import { useAction } from "../hooks/useAction";
@@ -631,8 +632,12 @@ export function SinkTransferPanel({ wallet, match, role, refresh }: PanelProps) 
 
   const doPropose = () =>
     propose.run(async (say, sent) => {
+      const target = next.trim();
+      // Written before the send, so a tab that navigates away mid-proposal
+      // still leaves the app-level sweep something it can recognise as landed.
+      noteSinkTarget(match.match_id, "propose_sink", target);
       say("simulating, then confirm the transaction in your wallet...");
-      await proposeSinkAddress(wallet, next.trim(), { onSubmitted: sent });
+      await proposeSinkAddress(wallet, target, { onSubmitted: sent });
       return "proposal recorded";
     });
 

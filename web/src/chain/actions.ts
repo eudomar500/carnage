@@ -38,6 +38,18 @@ export type SendHooks = {
   onSubmitted?: (hash: `0x${string}`) => void;
 };
 
+/**
+ * create_match only. Reports the id the simulation says the contract would
+ * mint, before anything is sent.
+ *
+ * The journal needs it at that moment and not at the end: a create whose tab
+ * navigates away never reaches the end, and the id is the only thing that lets
+ * the app-level sweep recognise the create as landed.
+ */
+export type CreateHooks = SendHooks & {
+  onPredicted?: (matchId: bigint) => void;
+};
+
 type CallSpec = {
   functionName: string;
   args: CalldataEncodable[];
@@ -164,7 +176,7 @@ function createArgs(i: CreateMatchInput): CalldataEncodable[] {
 export async function createMatch(
   account: `0x${string}`,
   input: CreateMatchInput,
-  hooks?: SendHooks,
+  hooks?: CreateHooks,
 ): Promise<{ matchId: bigint } & SendResult> {
   const args = createArgs(input);
 
@@ -179,6 +191,7 @@ export async function createMatch(
   } catch (err) {
     throw rethrow(err, "preflight");
   }
+  hooks?.onPredicted?.(predicted);
 
   const result = await send(account, { functionName: "create_match", args }, hooks);
 

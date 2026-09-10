@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coverageNote, discoverMatches, type Discovery } from "../chain/discovery";
 import { noteObserved } from "../chain/grace";
+import { reconcileAll } from "../chain/journal";
 import {
   actionCount,
   buildRoster,
@@ -108,6 +109,11 @@ export function useNotifications(wallet: `0x${string}` | null): NotificationFeed
         // The sweep sees matches the user has not opened, so this is the
         // earliest sighting the force-settle estimate can get.
         for (const m of found.matches) noteObserved(m);
+        // The app-level journal sweep. This hook runs from the top of the tree
+        // on every route, and it is the only place that reads every match the
+        // wallet has a stake in, so it is the one place an attempt record can
+        // be retired without depending on which panel happens to be mounted.
+        reconcileAll(found.matches, wallet, found.scannedTo);
         // One pass over the matches discovery already read. No second scan.
         const next = notificationsForMatches(found.matches, wallet);
         setItems(next);
