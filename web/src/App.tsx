@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LandingPage from "./pages/LandingPage";
 import MatchApp from "./pages/MatchApp";
 import PostPage from "./pages/PostPage";
+import LabPage from "./pages/LabPage";
 import { findPost } from "./content/posts";
 import type { NavShell } from "./components/TopNav";
 import { useNotifications } from "./hooks/useNotifications";
@@ -93,6 +94,10 @@ export default function App() {
     },
     [go],
   );
+  const onOpenLab = useCallback(() => {
+    bellPinned.current = false;
+    go({ view: "lab" });
+  }, [go]);
 
   /**
    * The bell's own navigation. Same move as onOpenMatch, plus the pin.
@@ -153,7 +158,7 @@ export default function App() {
   const notifications = useNotifications(wallet);
   const nav: NavShell = {
     wallet, connecting, onConnect, onDisconnect, onHome, onLaunch,
-    notifications, onOpenMatch: onOpenFromBell,
+    notifications, onOpenMatch: onOpenFromBell, onOpenLab,
   };
 
   // An unknown slug is a typo or a stale link. The landing carries the list of
@@ -161,6 +166,10 @@ export default function App() {
   const post = !preview && route.view === "post" ? findPost(route.slug) : null;
   if (post) {
     return <PostPage nav={nav} post={post} />;
+  }
+
+  if (!preview && route.view === "lab") {
+    return <LabPage nav={nav} />;
   }
 
   if (!preview && (route.view === "landing" || route.view === "post")) {

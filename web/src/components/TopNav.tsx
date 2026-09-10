@@ -54,6 +54,8 @@ export type NavShell = {
    */
   notifications?: NotificationFeed;
   onOpenMatch?: (id: number) => void;
+  /** Opens the lab, which is a page of its own rather than a landing anchor. */
+  onOpenLab?: () => void;
 };
 
 export type TopNavProps = NavShell & {
@@ -82,6 +84,7 @@ export default function TopNav({
   onLaunch,
   notifications,
   onOpenMatch,
+  onOpenLab,
   hasReplay = false,
 }: TopNavProps) {
   const onLanding = variant === "landing";
@@ -141,6 +144,19 @@ export default function TopNav({
             </a>
           );
         })}
+        {onOpenLab ? (
+          <a
+            className="nav-lab"
+            href={hrefFor({ view: "lab" })}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              onOpenLab();
+            }}
+          >
+            LABS
+          </a>
+        ) : null}
       </nav>
 
       {isApp ? null : (

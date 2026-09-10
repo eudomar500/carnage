@@ -1807,3 +1807,139 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .bell-row-id { color: var(--ink); font-size: 12px; }
 .bell-row-status { color: var(--ink-dim); font-size: 11px; letter-spacing: 0.08em; }
 .bell-row-role { color: var(--ink-faint); font-size: 10px; letter-spacing: 0.12em; }
+
+/* ---------- carnage labs ------------------------------------------------- */
+
+.nav-lab { color: var(--crimson) !important; }
+
+.lab { max-width: 980px; margin: 0 auto; padding: 40px 24px 80px; }
+.lab-head { border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 26px; margin-bottom: 30px; }
+.lab-kicker { font-size: 10px; letter-spacing: 0.28em; color: var(--crimson); margin: 0 0 12px; }
+.lab-title { font-size: 26px; letter-spacing: 0.06em; line-height: 1.35; margin: 0 0 16px; }
+.lab-lede { font-size: 13.5px; line-height: 1.75; color: var(--ink-dim); max-width: 74ch; margin: 0; }
+
+.lab-section { margin: 0 0 46px; }
+.lab-h2 { font-size: 13px; letter-spacing: 0.18em; color: var(--ink); margin: 0 0 14px; }
+.lab-h3 { font-size: 12px; letter-spacing: 0.14em; color: var(--amber); margin: 0 0 12px; }
+.lab-body { font-size: 12.5px; line-height: 1.75; color: var(--ink-dim); max-width: 74ch; margin: 0 0 14px; }
+.lab-note { font-size: 11px; color: var(--ink-faint); letter-spacing: 0.04em; margin: 10px 0 0; }
+.lab-stat { font-size: 13px; line-height: 1.7; color: var(--ink); margin: 14px 0; }
+.lab-stat strong { color: var(--crimson); }
+
+/* The caveat is not fine print. It carries the same weight as the number. */
+.lab-caveat {
+  font-size: 12px; line-height: 1.7; color: var(--ink-dim);
+  border-left: 2px solid var(--amber); padding: 10px 0 10px 14px;
+  margin: 14px 0; max-width: 74ch;
+}
+.lab-caveat strong { color: var(--amber); }
+
+.lab-open { border: 1px solid rgba(201, 162, 39, 0.35); padding: 20px; margin-top: 26px; }
+.lab-open-tag {
+  display: inline-block; font-size: 10px; letter-spacing: 0.16em; color: var(--amber);
+  border: 1px solid var(--amber); padding: 3px 8px; margin: 0 0 12px;
+}
+
+/* label distribution */
+.lab-bars { display: flex; flex-direction: column; gap: 9px; margin: 4px 0 8px; }
+.lab-bar { display: grid; grid-template-columns: 130px 1fr 34px; align-items: center; gap: 12px; }
+.lab-bar-name { font-size: 10.5px; letter-spacing: 0.14em; color: var(--ink-dim); }
+.lab-bar-track { height: 16px; background: rgba(255, 255, 255, 0.05); position: relative; }
+.lab-bar-fill { display: block; height: 100%; background: var(--crimson-dim); }
+.lab-bar-fill--true { background: var(--green); }
+.lab-bar-fill--misleading { background: var(--amber); }
+.lab-bar-fill--false { background: var(--crimson); }
+.lab-bar-fill--unsupported { background: var(--steel-dim); }
+.lab-bar-count { font-size: 12px; color: var(--ink); text-align: right; }
+.lab-bar-note { grid-column: 2 / 4; font-size: 10.5px; color: var(--amber); letter-spacing: 0.04em; }
+
+/* grading matrix */
+.lab-matrix-wrap { overflow-x: auto; margin: 6px 0 16px; }
+.lab-matrix { border-collapse: collapse; width: 100%; min-width: 640px; }
+.lab-matrix th, .lab-matrix td { border: 1px solid rgba(255, 255, 255, 0.09); }
+.lab-matrix-corner { font-size: 9.5px; letter-spacing: 0.14em; color: var(--ink-faint); text-align: left; padding: 8px 10px; }
+.lab-matrix-col { font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-dim); padding: 8px 6px; width: 108px; }
+.lab-matrix-row {
+  font-size: 10px; letter-spacing: 0.08em; color: var(--ink-dim);
+  text-align: left; padding: 10px; font-weight: normal;
+}
+.lab-matrix-rowcount { display: block; font-size: 9.5px; color: var(--ink-faint); margin-top: 3px; }
+.lab-matrix-cell { text-align: center; font-size: 13px; color: var(--ink-faint); padding: 12px 6px; }
+.lab-matrix-cell--on { color: #fff; font-weight: 600; }
+
+/* convergence */
+.lab-conv { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 14px; }
+.lab-conv-row { display: grid; grid-template-columns: 46px 1fr 200px; align-items: center; gap: 12px; }
+.lab-conv-id { font-size: 11px; color: var(--ink-faint); }
+.lab-conv-track { display: flex; gap: 4px; align-items: center; }
+.lab-conv-link { display: block; }
+.lab-conv-seg {
+  display: flex; align-items: center; justify-content: center;
+  height: 18px; background: var(--crimson); color: #fff;
+  font-size: 10px; letter-spacing: 0.06em; min-width: 18px;
+}
+.lab-conv-seg--dropped { background: var(--amber); color: #120f0d; }
+.lab-conv-verdict { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.04em; }
+.lab-conv-key { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
+.lab-conv-keyitem { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-faint); }
+.lab-conv-swatch { width: 12px; height: 12px; background: var(--crimson); display: inline-block; }
+.lab-conv-swatch--dropped { background: var(--amber); }
+
+/* claims */
+.lab-claims { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.lab-claim { border-left: 2px solid rgba(255, 255, 255, 0.12); padding: 12px 0 12px 14px; }
+.lab-claim--scored { border-left-color: var(--crimson-dim); }
+.lab-claim-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.lab-claim-id { font-size: 11px; color: var(--ink); }
+.lab-claim-role, .lab-claim-revealed { font-size: 10px; letter-spacing: 0.12em; color: var(--ink-faint); }
+.lab-claim-label { font-size: 10px; letter-spacing: 0.12em; padding: 2px 7px; border: 1px solid currentColor; }
+.lab-claim-label--true { color: var(--green); }
+.lab-claim-label--false { color: var(--crimson); }
+.lab-claim-label--misleading { color: var(--amber); }
+.lab-claim-label--unsupported { color: var(--steel-dim); }
+.lab-claim-label--ambiguous { color: var(--amber); }
+.lab-claim-flag { font-size: 10px; letter-spacing: 0.1em; color: var(--amber); }
+.lab-claim-text {
+  margin: 0 0 8px; padding: 0; font-size: 13px; line-height: 1.65;
+  color: var(--ink); font-style: italic;
+}
+.lab-claim-verdict { font-size: 11.5px; line-height: 1.7; color: var(--ink-dim); margin: 0; }
+.lab-claim-tier {
+  display: inline-block; font-size: 9.5px; letter-spacing: 0.14em;
+  color: var(--crimson); border: 1px solid var(--crimson); padding: 1px 6px; margin-right: 8px;
+}
+.lab-claim-tier--open { color: var(--steel-dim); border-color: var(--steel-dim); }
+.lab-claim-reasoning {
+  font-size: 11px; line-height: 1.7; color: var(--ink-faint);
+  margin: 8px 0 0; max-width: 84ch;
+}
+.lab-agree { color: var(--green); }
+.lab-disagree { color: var(--crimson); }
+
+/* per round drill-down */
+.lab-drill { margin-top: 16px; }
+.lab-drill-body { margin-top: 14px; display: flex; flex-direction: column; gap: 16px; }
+.lab-drill-head { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.lab-drill-tag {
+  font-size: 9.5px; letter-spacing: 0.14em; color: var(--crimson);
+  border: 1px solid var(--crimson); padding: 2px 7px;
+}
+.lab-drill-tag--dropped { color: var(--amber); border-color: var(--amber); }
+.lab-drill-rounds { display: flex; flex-direction: column; gap: 4px; }
+.lab-drill-round { display: flex; gap: 10px; align-items: center; }
+.lab-drill-n { font-size: 10px; color: var(--ink-faint); width: 62px; }
+.lab-drill-label { font-size: 10px; letter-spacing: 0.1em; padding: 2px 7px; border: 1px solid currentColor; }
+.lab-drill-label--true { color: var(--green); }
+.lab-drill-label--false { color: var(--crimson); }
+.lab-drill-label--misleading { color: var(--amber); }
+.lab-drill-label--unsupported { color: var(--steel-dim); }
+.lab-drill-label--ambiguous { color: var(--amber); }
+.lab-drill-none { font-size: 10px; color: var(--ink-faint); }
+
+.lab-foot { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px; margin-top: 20px; }
+
+@media (max-width: 720px) {
+  .lab-bar { grid-template-columns: 100px 1fr 28px; }
+  .lab-conv-row { grid-template-columns: 40px 1fr; }
+  .lab-conv-verdict { grid-column: 2; }
+}

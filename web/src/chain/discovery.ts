@@ -129,6 +129,7 @@ async function walk(
   wallet: string,
   from: number,
   limit: number,
+  keep: (m: MatchState, wallet: string) => boolean = walletIsInvolved,
 ): Promise<{ found: MatchState[]; scannedTo: number; capped: boolean; degraded: string | null }> {
   const found: MatchState[] = [];
   let scannedTo = from - 1;
@@ -152,7 +153,7 @@ async function walk(
         return { found, scannedTo, capped: false, degraded: null };
       }
       scannedTo = r.id;
-      if (r.match && walletIsInvolved(r.match, wallet)) found.push(r.match);
+      if (r.match && keep(r.match, wallet)) found.push(r.match);
     }
     id += batch.length;
   }
@@ -212,6 +213,56 @@ export async function discoverMatches(wallet: string): Promise<DiscoveryResult> 
   // so the next refresh should walk properly rather than trust this.
   if (!result.degraded && !ahead.capped) writeCache(wallet, result);
   return { ...result, matches };
+}
+
+/**
+ * Every match on the contract, whoever played it.
+ *
+ * The bell asks a different question: which matches involve this wallet. The
+ * lab needs the whole record, and it runs on the landing where there may be
+ * no wallet at all, so it walks with the filter open and caches under a key
+ * of its own rather than a wallet's.
+ *
+ * The walk, the cap and the honest reporting of both are the same ones the
+ * bell uses. Only the filter and the cache key differ.
+ */
+const ALL_KEY = "all";
+
+export async function discoverAllMatches(): Promise<DiscoveryResult> {
+  const cached = readCache(ALL_KEY);
+  const fresh = cached !== null && Date.now() - cached.at < CACHE_TTL_MS;
+
+  if (fresh) {
+    const known: MatchState[] = [];
+    let degraded: string | null = null;
+    for (let i = 0; i < cached.ids.length; i += CONCURRENCY) {
+      const slice = cached.ids.slice(i, i + CONCURRENCY);
+      for (const r of await Promise.all(slice.map(probe))) {
+        if (r.error) degraded = "a read failed, so some matches may be out of date";
+        else if (r.match) known.push(r.match);
+      }
+    }
+    const ahead = await walk(ALL_KEY, cached.scannedTo + 1, LOOKAHEAD, () => true);
+    const matches = [...known, ...ahead.found].sort((a, b) => Number(a.match_id - b.match_id));
+    const result: Discovery = {
+      ids: matches.map((m) => Number(m.match_id)),
+      scannedTo: Math.max(cached.scannedTo, ahead.scannedTo),
+      capped: cached.capped,
+      degraded: degraded ?? ahead.degraded,
+    };
+    if (!result.degraded && !ahead.capped) writeCache(ALL_KEY, result);
+    return { ...result, matches };
+  }
+
+  const { found, scannedTo, capped, degraded } = await walk(ALL_KEY, 1, MAX_SCAN_IDS, () => true);
+  const result: Discovery = {
+    ids: found.map((m) => Number(m.match_id)),
+    scannedTo,
+    capped,
+    degraded,
+  };
+  if (!degraded) writeCache(ALL_KEY, result);
+  return { ...result, matches: found };
 }
 
 /** What the bell says about its own coverage. Empty when there is nothing to say. */
