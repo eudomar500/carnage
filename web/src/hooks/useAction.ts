@@ -144,7 +144,6 @@ export function useAction(opts: ActionOptions): ActionRunner {
   const [hash, setHash] = useState<string | null>(journaled?.hash ?? null);
 
   const alive = useRef(false);
-  const running = useRef(false);
   /**
    * Which attempt owns the hook right now.
    *
@@ -153,6 +152,28 @@ export function useAction(opts: ActionOptions): ActionRunner {
    * write state belonging to somebody else's attempt.
    */
   const gen = useRef(0);
+  /**
+   * The generation that is currently driving the hook, and whether that work
+   * is an interactive send or a watch resumed from the journal. Zero means
+   * nobody is driving anything.
+   *
+   * This used to be a bare `running` boolean, and a boolean cannot say whose
+   * work it describes. A watch superseded while it was asleep left the flag
+   * raised, because the only place that lowered it was guarded on the
+   * generation still matching and it no longer did. From that moment the hook
+   * believed an attempt was in progress for the rest of the mount: the resume
+   * effect refused to start a replacement watch, and the journal listener
+   * refused to retire the notice when the sweep cleared the record. Those two
+   * together are what left an in-flight notice on screen after the claim had
+   * already landed, with only a manual reload to take it down.
+   *
+   * Ownership keyed to a generation cannot get stuck. A superseded owner stops
+   * counting as busy the moment it is superseded, and it only ever releases
+   * the slot it took itself, so it cannot lower a flag belonging to somebody
+   * else either.
+   */
+  const owner = useRef(0);
+  const ownerKind = useRef<"send" | "resume" | null>(null);
   const hashRef = useRef<string | null>(journaled?.hash ?? null);
   const latest = useRef(opts);
   /** Mirrors `inFlight` so the journal listener can read it without a closure. */
@@ -170,6 +191,22 @@ export function useAction(opts: ActionOptions): ActionRunner {
     return () => {
       alive.current = false;
     };
+  }, []);
+
+  /** Whether the generation holding the hook is still the current one. */
+  const driving = useCallback(() => owner.current !== 0 && owner.current === gen.current, []);
+
+  /** Takes the hook for `myGen`. The caller has already checked `driving`. */
+  const take = useCallback((myGen: number, kind: "send" | "resume") => {
+    owner.current = myGen;
+    ownerKind.current = kind;
+  }, []);
+
+  /** Releases the hook, but only from the generation that actually took it. */
+  const release = useCallback((myGen: number) => {
+    if (owner.current !== myGen) return;
+    owner.current = 0;
+    ownerKind.current = null;
   }, []);
 
   const set = useCallback((next: ActionPhase) => {
@@ -298,10 +335,10 @@ export function useAction(opts: ActionOptions): ActionRunner {
     async (
       fn: (say: (note: string) => void, sent: (hash: string) => void) => Promise<string>,
     ) => {
-      if (running.current) return;
+      if (driving()) return;
       const myGen = ++gen.current;
       const mine = () => alive.current && gen.current === myGen;
-      running.current = true;
+      take(myGen, "send");
 
       const { matchId, confirm } = latest.current;
       // A retry is a new attempt. Anything the last one left behind, including
@@ -361,10 +398,13 @@ export function useAction(opts: ActionOptions): ActionRunner {
         if (!mine()) return;
         await settle(confirm, matchId, note, mine);
       } finally {
-        if (gen.current === myGen) running.current = false;
+        // Released whether or not this attempt was superseded along the way.
+        // Guarding this on the generation still matching is what used to pin
+        // the hook busy forever once anything bumped it.
+        release(myGen);
       }
     },
-    [readState, set, settle],
+    [driving, readState, release, set, settle, take],
   );
 
   /**
@@ -395,8 +435,13 @@ export function useAction(opts: ActionOptions): ActionRunner {
     const mine = () => alive.current && gen.current === myGen;
 
     void (async () => {
-      if (running.current) return;
-      running.current = true;
+      // Ownership, not a boolean. In dev the effect is mounted, torn down and
+      // mounted again before the first read comes back, and the setup that
+      // arrives second has to be able to take the hook from the one the
+      // teardown already superseded. Otherwise the record is left seeded on
+      // screen with nothing watching it.
+      if (driving()) return;
+      take(myGen, "resume");
       try {
         const now = await readState();
         if (!mine()) return;
@@ -438,7 +483,8 @@ export function useAction(opts: ActionOptions): ActionRunner {
         setInFlight(null);
         set({ kind: "unconfirmed", note: confirm.unconfirmedNote, retryLabel: confirm.retryLabel });
       } finally {
-        if (gen.current === myGen) running.current = false;
+        // Same rule as run(): a superseded watch still hands the hook back.
+        release(myGen);
       }
     })();
 
@@ -446,7 +492,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
       // Supersede this watch so a loop asleep between polls stops on waking.
       gen.current += 1;
     };
-  }, [awaitLanding, isDead, markDiscarded, readState, set]);
+  }, [awaitLanding, driving, isDead, markDiscarded, readState, release, set, take]);
 
   /**
    * Retires a recovered notice the moment its record goes away.
@@ -466,10 +512,16 @@ export function useAction(opts: ActionOptions): ActionRunner {
     () =>
       subscribe(() => {
         if (!alive.current) return;
-        // An attempt this page is driving writes and clears its own record as
-        // part of the normal sequence, and must not be disturbed by hearing
-        // about it. Only a recovered notice is ours to retire here.
-        if (running.current) return;
+        // A send this page is driving writes and clears its own record as part
+        // of the normal sequence, and must not be disturbed by hearing about
+        // it. A resumed watch is the opposite case: the record it is watching
+        // has just been retired by the sweep, on the same postcondition it was
+        // polling for, and this is the only notification it will ever get. The
+        // sweep announces once, at the moment it clears the record, and if the
+        // panel ignores that one announcement nothing announces again. Bailing
+        // out here for a resumed watch is what left the notice up until the
+        // page was reloaded by hand.
+        if (driving() && ownerKind.current === "send") return;
         if (!inFlightRef.current) return;
         const { matchId, confirm } = latest.current;
         if (readAttempt(matchId, confirm.actionId)) return;
@@ -479,7 +531,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         setInFlight(null);
         setPhase({ kind: "idle" });
       }),
-    [],
+    [driving],
   );
 
   const reset = useCallback(() => set({ kind: "idle" }), [set]);
@@ -496,7 +548,8 @@ export function useAction(opts: ActionOptions): ActionRunner {
   const dismiss = useCallback(() => {
     const { matchId, confirm } = latest.current;
     gen.current += 1;
-    running.current = false;
+    owner.current = 0;
+    ownerKind.current = null;
     hashRef.current = null;
     clearAttempt(matchId, confirm.actionId);
     setInFlight(null);
