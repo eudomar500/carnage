@@ -1,15 +1,19 @@
+import { hrefFor } from "../lib/route";
+
 /**
  * What Carnage is for, stated once, on the landing.
  *
  * This is the positioning section: it explains that the match is an
- * instrument, not a toy. It reads nothing from the chain and takes no props,
- * which is why it lives on the presentation page and not in the app.
+ * instrument, not a toy. It reads nothing from the chain, which is why it
+ * lives on the presentation page and not in the app. Its one prop is the lab
+ * handler, because the metrics are defined here and measured there.
  *
  * One rule governs the copy here. The only numeric figure on the page comes
  * from published research and is labelled as such, right next to the number.
- * The five categories below are what the benchmark tracks; no values are
- * attached to them, because inventing one would undo the entire point of a
- * section about judges that cannot be trusted on their own say-so.
+ * No Carnage figure appears at all: the five categories are definitions, the
+ * values are computed from the contract in the lab, and a copy of one printed
+ * here could only go stale and undo the point of a section about judges that
+ * cannot be trusted on their own say-so.
  */
 
 type Metric = {
@@ -20,7 +24,8 @@ type Metric = {
 const METRICS: Metric[] = [
   {
     key: "Adjudication accuracy",
-    text: "against a human-labeled fixture set of claims.",
+    text:
+      "scored only on claims the revealed evidence can settle, against that evidence rather than a hand-assigned label, and reported with the number of distinct claim texts behind it.",
   },
   {
     key: "Consensus rate",
@@ -60,7 +65,12 @@ const REFERENCES: Reference[] = [
   },
 ];
 
-export default function Benchmark() {
+export type BenchmarkProps = {
+  /** Optional for the same reason TopNav's is: the lab is a page, not a section. */
+  onOpenLab?: () => void;
+};
+
+export default function Benchmark({ onOpenLab }: BenchmarkProps) {
   return (
     <section className="doc" id="benchmark">
       <div className="doc-head">
@@ -123,16 +133,36 @@ export default function Benchmark() {
         ))}
       </ol>
 
+      {onOpenLab ? (
+        <div className="bench-labs">
+          <a
+            className="lander-cta lander-cta--small"
+            href={hrefFor({ view: "lab" })}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              onOpenLab();
+            }}
+          >
+            OPEN CARNAGE LABS
+          </a>
+          <p className="lander-cta-note">
+            Those are the definitions. The lab computes them from the contract
+            on every visit.
+          </p>
+        </div>
+      ) : null}
+
       <p className="bench-para bench-para--wide">
-        The academic work on this problem runs in the lab: fixed datasets, local
-        models, no stakes. Carnage runs it in production. The jury is a live
-        network of independent validators on GenLayer, the evidence is
-        cryptographically committed before anyone speaks, the verdict moves real
-        funds, and every result is recorded on-chain and reproducible from the
-        block explorer. That is the gap Carnage fills: it takes a question the
-        research community is asking in isolation and answers it where it
-        actually matters, on a decentralized adjudication layer under real
-        economic pressure.
+        The academic work on this problem runs in research settings: fixed
+        datasets, local models, no stakes. Carnage runs it in production. The
+        jury is a live network of independent validators on GenLayer, the
+        evidence is cryptographically committed before anyone speaks, the
+        verdict moves real funds, and every result is recorded on-chain and
+        reproducible from the block explorer. That is the gap Carnage fills: it
+        takes a question the research community is asking in isolation and
+        answers it where it actually matters, on a decentralized adjudication
+        layer under real economic pressure.
       </p>
 
       <p className="bench-close">

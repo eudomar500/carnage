@@ -104,7 +104,7 @@ export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
       <HowItWorks match={null} />
       <Rubric match={null} />
       <Replay match={null} />
-      <Benchmark />
+      <Benchmark onOpenLab={nav.onOpenLab} />
       <Blog onOpenPost={onOpenPost} />
 
       <p className="thesis">
