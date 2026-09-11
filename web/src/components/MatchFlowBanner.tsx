@@ -52,7 +52,7 @@ export default function MatchFlowBanner() {
       >
         <title id="flow-banner-title">
           One match end to end: seal a secret, stake, write a claim, reveal,
-          face a jury of five validators, and settle.
+          face a jury of validators, and settle.
         </title>
 
         <defs>

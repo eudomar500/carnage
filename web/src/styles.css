@@ -1640,6 +1640,8 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 
 .post-head { margin: 34px 0 0; }
 .post-date { font-size: 10px; letter-spacing: 0.22em; color: var(--ink-faint); }
+/* Mixed case, so it carries less letter-spacing than the uppercase date. */
+.post-author { margin: 7px 0 0; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); }
 .post-title {
   margin: 14px 0 0;
   font-family: var(--display); font-weight: 400;

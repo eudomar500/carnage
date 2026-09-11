@@ -10,6 +10,8 @@ export type Post = {
   title: string;
   /** ISO yyyy-mm-dd. The real publication date, never taken from the clock. */
   date: string;
+  /** Who wrote it. Rendered under the date; these are signed opinion pieces. */
+  author: string;
   /** One line, shown in the list on the landing. */
   summary: string;
   Banner?: ComponentType;
@@ -29,6 +31,7 @@ export const POSTS: Post[] = [
     slug: "how-carnage-works",
     title: "How Carnage works, in plain language",
     date: "2026-09-08",
+    author: "zkVan",
     summary:
       "A plain-language walkthrough of a full match: seal a secret, write your claim, and watch the GEN follow the verdict.",
     Banner: MatchFlowBanner,
@@ -38,8 +41,9 @@ export const POSTS: Post[] = [
     slug: "stress-test-for-the-judge",
     title: "Why the agent economy needs a stress test for its judge",
     date: "2026-09-07",
+    author: "zkVan",
     summary:
-      "Most systems that use an AI jury only show the happy path. Carnage tests what the judge does when a claim is built to deceive it, and proves the result on-chain.",
+      "A claim on match 2 told the jury to ignore its instructions and rule TRUE. The jury returned FALSE, slashed the full stake to the honest side, and left the whole exchange on the block explorer.",
     Banner: ClaimBanner,
     Body: StressTestForTheJudge,
   },

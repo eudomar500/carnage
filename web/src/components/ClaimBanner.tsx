@@ -41,7 +41,7 @@ export default function ClaimBanner() {
       >
         <title id="banner-title">
           A balance weighing a natural-language claim against a sealed
-          commitment, with a jury of five validators above the fulcrum.
+          commitment, with a jury of validators above the fulcrum.
         </title>
 
         <defs>

@@ -36,6 +36,7 @@ export default function PostPage({ nav, post }: PostPageProps) {
           <time className="post-date" dateTime={post.date}>
             {formatPostDate(post.date)}
           </time>
+          <p className="post-author">by {post.author}</p>
           <h1 className="post-title">{post.title}</h1>
           <p className="post-summary">{post.summary}</p>
         </header>
