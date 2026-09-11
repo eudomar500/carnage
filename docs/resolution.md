@@ -54,6 +54,14 @@ validator also refuses to agree when the leader's result is not a successful
 return, which forces consensus to retry or rotate rather than ratify a failed
 run.
 
+Agreement on the label is not the last gate. The validator function decides
+whether that validator accepts the leader's result; whether the round itself
+is accepted, and so whether its writes ever reach contract state, is settled
+afterwards by the round result. An execution that returned cleanly and
+produced both labels can still be discarded, leaving the match exactly as it
+was. Item 4 under Failure handling covers what that looks like and what to do
+about it.
+
 The enum is enforced on parse, not merely requested in the prompt.
 `_parse_adjudication_output` normalizes the label to upper case, accepts a
 small set of alias keys for the label field, and raises `[LLM_ERROR]` for
@@ -178,18 +186,51 @@ Resolution degrades in layers.
 
 4. Non-convergence. Genuine disagreement across validators cannot be caught
    inside a single execution, because it is a property of the committee rather
-   than of one run. Such a transaction ends UNDETERMINED at the consensus
-   layer and commits nothing, so the match stays unresolved and the funds stay
-   locked, untouched. UNDETERMINED is a platform outcome, not contract state:
-   what the contract contributes is atomicity, plus the terminal-state guard
-   that makes a retry safe. Adjudication is permissionless, so any caller can
-   run it again. As a backstop, once `inconclusive_deadline` passes, any
-   caller triggers `resolve_inconclusive`. It requires both sides revealed,
-   requires that the match was not adjudicated, rejects a second run, credits
-   each side its own escrow back in full, and emits
-   `MatchInconclusiveRefunded`. No slash, no transfer to the counterparty,
-   nothing to the sink. An honest disagreement the jury cannot settle costs
-   the players nothing.
+   than of one run. Reading that outcome means reading two independent fields
+   on the transaction. Status is the lifecycle: FINALIZED means consensus for
+   this transaction is over and cannot change again. Result is the acceptance:
+   AGREE and MAJORITY_AGREE mean the execution was accepted and its storage
+   writes committed, while TIMEOUT, NO_MAJORITY and the other results mean the
+   round was discarded and nothing it produced was written.
+
+   The two are independent. A transaction that is FINALIZED with a
+   non-accepting result wrote nothing at all, and the execution behind it can
+   still have run to completion: returned successfully, produced both labels
+   and their reasoning, and carried a storage-changes payload. None of that
+   reaches contract state once the round is discarded. A client that equates
+   FINALIZED with success reports a verdict that does not exist, which is why
+   confirmation is read from `get_match` and the transaction's own result is
+   treated as the separate question of whether waiting is still worthwhile.
+
+   Two rounds on this contract have been discarded this way. On match 3,
+   `0x1e4e5dbc1c632892e3ee174fc695bd30547f00e2d11dae51465b0084eaf448eb`
+   finalized with result TIMEOUT after six rounds, with rotations still
+   available. On match 8,
+   `0x146baa03a14e7e29d7050cf16eb8d1f1c2877684474eca5894b0240dd879141c`
+   finalized with result NO_MAJORITY after rotations were exhausted on a split
+   vote. Both executions returned labels, and match 8 shows how little that
+   settles: the discarded round returned FALSE for the holder's claim, and the
+   round accepted afterwards returned UNSUPPORTED for the same claim, which is
+   the label the contract holds. Why validators timed out in the first case,
+   and why some voted DETERMINISTIC_VIOLATION in the second, is not
+   established by the data available on-chain.
+
+   None of this touches the match. A discarded round commits nothing, so the
+   match stays unresolved and both stakes stay in escrow, untouched. What the
+   contract contributes is atomicity: labels, reasoning and the `adjudicated`
+   flag are assigned together, after both classifications have returned, so
+   there is no partial verdict to clean up. The guard that rejects an already
+   adjudicated match is what makes a retry safe, and `adjudicated` is still
+   false after a discarded round, so the retry is allowed. Adjudication is
+   permissionless, so any caller can run it again. That is what resolved both
+   matches above.
+
+   As a backstop, once `inconclusive_deadline` passes, any caller triggers
+   `resolve_inconclusive`. It requires both sides revealed, requires that the
+   match was not adjudicated, rejects a second run, credits each side its own
+   escrow back in full, and emits `MatchInconclusiveRefunded`. No slash, no
+   transfer to the counterparty, nothing to the sink. An honest disagreement
+   the jury cannot settle costs the players nothing.
 
 5. A verdict that never got paid out. Settlement is scheduled rather than
    immediate (see below), which means there is a window where the labels are

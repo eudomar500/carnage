@@ -146,13 +146,13 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         pollMs: JURY_POLL_MS,
         // The one action that hits this regularly. adjudicate is the only
         // call the app does not preflight, and the only one that runs a
-        // nondeterministic round, so every validator re-runs both prompts and
-        // a slow set times the round out. See chain/txstate.ts.
+        // nondeterministic round, which is what exposes it to a round the
+        // consensus layer finalizes without accepting. See chain/txstate.ts.
         discardedNote:
           "The previous jury round finished on-chain but did not write a " +
-          "verdict to the contract. This happens on Bradbury when validators " +
-          "time out and the round is discarded under heavy appeals. Nothing " +
-          "was spent from escrow. You can summon the jury again.",
+          "verdict to the contract: consensus discarded the round, so the " +
+          "match is unchanged and nothing was spent from escrow. You can " +
+          "summon the jury again.",
         // Tolerant on purpose. If settlement runs between two polls we have
         // still seen what we came for, and reporting a stuck jury because the
         // state ran ahead of us would be a false alarm.
