@@ -1,32 +1,30 @@
-# React + TypeScript + Vite
+# web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The Carnage front end: the landing page, the match app, the replay, and
+Carnage Labs. React and TypeScript on Vite, built as a static bundle with no
+server behind it.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+npm install        # dependencies
+npm run dev        # dev server
+npm run build      # typecheck and produce dist/
+npx vitest run     # tests
+npm run lint       # oxlint
+npm run snapshot   # regenerate src/chain/history.json from the contract
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Two things worth knowing before editing
+
+The contract address and the chain live in `src/chain/client.ts`. Everything
+else derives from those two constants, including which transactions the
+history index is considered valid for.
+
+`npm run snapshot` rewrites `src/chain/history.json`, the committed index of
+every transaction sent to the contract up to a snapshot block. It exists
+because the Bradbury RPC caps `eth_getLogs` at 10000 blocks and the chain
+produces a block every 0.76 s, so reading the whole history at page load grows
+without bound. Blocks after the snapshot are scanned live. Re-run it whenever
+the on-chain record should catch up, and commit the result;
+`src/chain/txlog.ts` explains the split in full.

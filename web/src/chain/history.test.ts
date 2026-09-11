@@ -17,6 +17,7 @@ import {
   historyFor,
   isTerminalStatus,
   SNAPSHOT_BLOCK,
+  staleEntries,
 } from "./history";
 import { indexedAttempts } from "../hooks/useLabData";
 import { convergenceOf, convergenceSummary } from "./labs";
@@ -59,8 +60,12 @@ describe("the committed index", () => {
     expect(discarded.map((e) => e.result).sort()).toEqual(["NO_MAJORITY", "TIMEOUT"]);
   });
 
-  it("carries only terminal statuses, so nothing needs re-reading", () => {
-    expect(HISTORY.transactions.every((e) => isTerminalStatus(e.status))).toBe(true);
+  it("reports any entry that was still in flight, so the runtime re-reads it", () => {
+    // A snapshot can legitimately catch a transaction before it finalizes.
+    // What must hold is that such an entry is visible as stale rather than
+    // trusted, which is what sends it back to the node at runtime.
+    const notTerminal = HISTORY.transactions.filter((e) => !isTerminalStatus(e.status));
+    expect(staleEntries(HISTORY.transactions)).toEqual(notTerminal);
   });
 
   it("records consensus rounds, which contract state does not hold", () => {
