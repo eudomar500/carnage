@@ -19,18 +19,33 @@ import { useAdjudications, useLabMatches } from "../hooks/useLabData";
 /**
  * The lab.
  *
- * Every number on this page is read from the contract when the page loads.
- * There is no fixture, no seeded example and no figure typed in by hand, which
- * is the only reason any of it is worth reading. The corpus is small and says
- * so, in the places where a small corpus would otherwise flatter a number.
+ * Two tiers, two sources. Everything derived from a match, which is every
+ * claim, label, agreement and grading figure, is read from get_match on the
+ * deployed contract when the page loads. Everything about how a verdict was
+ * reached comes from the consensus contract's transaction log, served from a
+ * committed index through its snapshot block and a live scan of the blocks
+ * after it, because the contract cannot record how many attempts a verdict
+ * took. No figure is typed in by hand. The corpus is small and says so, in the
+ * places where a small corpus would otherwise flatter a number.
  *
- * Nothing below the header renders until the read finishes. A page of zeros
- * that turns into real numbers a few seconds later reads as broken, and the
- * fix is to say what is happening rather than to show a placeholder that
+ * Nothing below the header renders until the match read finishes. A page of
+ * zeros that turns into real numbers a few seconds later reads as broken, and
+ * the fix is to say what is happening rather than to show a placeholder that
  * looks like a result.
  */
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/**
+ * The two matches this page reads closely, pinned by id.
+ *
+ * Match 8 carries the holder claim written to draw AMBIGUOUS, and match 2 the
+ * only injection-shaped claim on the contract. Both were chosen by hand, so
+ * they are selected by id: following a substring would let a later match that
+ * happened to share the wording take over a section written about this one.
+ */
+const AMBIGUITY_CASE = { matchId: 8n, role: "holder" as const };
+const INJECTION_CASE = { matchId: 2n, role: "holder" as const };
 
 /**
  * Says whether a section is a measurement or an example.
@@ -80,15 +95,24 @@ export default function LabPage({ nav }: { nav: NavShell }) {
     missingNote: `no adjudicate transaction found for this match, in the committed index through block ${adj.snapshotBlock.toLocaleString("en-US")} or in the live blocks after it`,
   };
 
-  // The designed ambiguity experiment lives on whichever match carries it, so
-  // the drill-down follows the claim rather than a hardcoded id.
-  const designedRow = rows.find((r) => r.claim.includes("because they pushed me"));
+  const designedRow = rows.find(
+    (r) => r.matchId === AMBIGUITY_CASE.matchId && r.role === AMBIGUITY_CASE.role,
+  );
+  const injectionRow = rows.find(
+    (r) => r.matchId === INJECTION_CASE.matchId && r.role === INJECTION_CASE.role,
+  );
+  // The tag is printed once per rendered case section, so the count that
+  // announces them is taken from the same two conditions.
+  const caseSections = [designedRow, injectionRow].filter(Boolean).length;
+  const injectionHeld =
+    !!injectionRow && injectionRow.truth.verifiable && injectionRow.agrees === true;
   const designedConv = designedRow
     ? adj.byMatch.find((c) => c.matchId === designedRow.matchId)
     : undefined;
 
-  // Whether the designed claim was in fact the hardest one to settle is a
-  // question for the consensus log, not for the person writing the sentence.
+  // Whether that match was in fact the hardest to settle is a question for the
+  // consensus log, not for the person writing the sentence. The comparison is
+  // per match, because both claims of a match share one adjudicate call.
   const roundsSpent = (c: { attempts: { rounds: number }[] }) =>
     c.attempts.reduce((n, a) => n + a.rounds + 1, 0);
   const designedWasHardest =
@@ -102,14 +126,19 @@ export default function LabPage({ nav }: { nav: NavShell }) {
       <main className="lab">
         <header className="lab-head">
           <p className="lab-kicker">CARNAGE LABS</p>
-          <h1 className="lab-title">WHAT AN AI JURY DOES WHEN THE MONEY IS REAL</h1>
+          <h1 className="lab-title">WHAT THE JURY RETURNED, READ FROM THE CONTRACT</h1>
           <p className="lab-lede">
-            Carnage settles arguments between two people by putting the argument
-            to an AI jury that runs on-chain, across independent validators,
-            with both sides' money staked on the answer. This page is the record
-            of what that jury has actually done. Every figure on it is read from
-            the contract while the page loads, and every verdict below links to
-            the transaction that produced it.
+            Carnage is a negotiation game in which each side stakes 0.01 GEN and
+            anchors a natural-language claim on-chain. An AI jury running across
+            independent validators on GenLayer's Bradbury testnet labels each
+            claim against the constraint that side revealed, and the labels move
+            the stakes. This page is the record of what that jury returned. Match
+            data is read from the contract on every visit; the transaction
+            history behind each verdict comes from{" "}
+            <a className="lab-inline-link" href="#sources">
+              two sources, both on-chain
+            </a>
+            .
           </p>
 
           {!loading && !error ? (
@@ -119,12 +148,18 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 on-chain, <strong>{rows.length}</strong> claims put to the jury.
               </p>
               <p className="lab-note">
-                How to read this page. Most of what follows is measured live: it
-                is recomputed from the contract every time this page opens, and
-                it grows with every match anyone plays. Two sections are marked
-                CASE STUDY. Those are fixed examples we looked at closely. Their
-                transactions are real and checkable, but the numbers in them
-                describe one match and do not recompute.
+                How to read this page. Sections marked LIVE MEASUREMENT are
+                recomputed from the contract every time this page opens, and
+                they move as matches accumulate.{" "}
+                {caseSections > 0 ? (
+                  <>
+                    {caseSections} {plural(caseSections, "section is", "sections are")}{" "}
+                    marked CASE STUDY: one match picked by hand and read closely.
+                    The choice of match and the commentary are fixed. The label,
+                    the attempt count and the transaction links in them are read
+                    live like everything else.
+                  </>
+                ) : null}
               </p>
             </>
           ) : null}
@@ -135,24 +170,84 @@ export default function LabPage({ nav }: { nav: NavShell }) {
 
         {!loading && !error ? (
           <>
+            {/* 0. How every figure below was produced. */}
+            <section className="lab-section">
+              <h2 className="lab-h2">METHOD</h2>
+              <ul className="lab-method">
+                <li>
+                  <strong>Corpus.</strong> Every match on the deployed contract,
+                  fetched by id through get_match when this page loads, from 1
+                  upward until the contract reports an unknown id. Each
+                  adjudicated match contributes two claims, one per seat. Both
+                  seats stake 0.01 GEN on GenLayer's Bradbury testnet.
+                </li>
+                <li>
+                  <strong>Ground truth.</strong> Each side commits a private
+                  number before anyone speaks and reveals it at the end. A claim
+                  is scored only when it states that party's own constraint as a
+                  number the revealed value settles, either directly ("My minimum
+                  price is 650") or as a bound the party will not cross ("I can't
+                  go below 780").
+                </li>
+                <li>
+                  <strong>Two judgment calls inside that rule.</strong> A number
+                  below one fifth of the band floor or above five times the band
+                  ceiling is treated as not a price for this match. A bound that
+                  understates the real constraint is literally true and is left
+                  unscored as arguable rather than counted either way. Both calls
+                  narrow what is scored; neither decides a label.
+                </li>
+                <li>
+                  <strong>Exclusions.</strong> Every unscored claim appears in the
+                  table at the bottom with the reason it was not scored, so the
+                  claims kept out can be checked against the claims kept in.
+                </li>
+                <li>
+                  <strong>Denominator.</strong> Agreement is reported over scored
+                  claims and next to the number of distinct claim texts behind
+                  them. The same sentence played twice is two claims and one
+                  sentence.
+                </li>
+                <li>
+                  <strong>Convergence.</strong> get_match records that a match was
+                  adjudicated, never how many attempts that took, because a
+                  discarded round writes nothing to contract state. Attempts are
+                  reconstructed from the consensus contract's transaction log,
+                  read from a committed index through its snapshot block and a
+                  live scan of the blocks after it.
+                </li>
+              </ul>
+            </section>
+
             {/* 1. Why measure this at all */}
             <section className="lab-section">
               <h2 className="lab-h2">WHY MEASURE THIS</h2>
               <p className="lab-body">
-                Almost everything known about AI judges was measured in a lab.
-                Researchers have shown that a judge model can be steered by text
-                planted in the very thing it is reading, and they showed it on
-                fixed datasets, offline, where whoever wrote the text had
-                nothing at stake and the verdict decided nothing.
+                Published work on judge architectures reports that a judge can be
+                steered by text planted in the input it is asked to judge:{" "}
+                <a
+                  className="lab-inline-link"
+                  href="https://arxiv.org/abs/2505.13348"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Investigating the Vulnerability of LLM-as-a-Judge Architectures
+                  to Prompt-Injection Attacks
+                </a>{" "}
+                (arXiv:2505.13348) reports attack success rates above 30 percent
+                against current models. That figure is a published research
+                result and not a Carnage measurement. It was obtained on fixed
+                datasets, offline, where the text had no cost to write and the
+                verdict moved nothing.
               </p>
               <p className="lab-body">
-                Carnage asks the same questions where the money is real. The
-                claims are written by people whose own stake is on the table,
-                the jury runs across independent validators rather than a single
-                model call, and the verdict moves that stake. Two things show up
-                here that a fixed dataset cannot produce: what somebody writes
-                when a bluff has a price, and what a distributed jury does when
-                validators drop out and a verdict has to be fought to consensus.
+                Carnage runs the same question with a stake attached. The claims
+                are written by a player whose own 0.01 GEN is on the table, the
+                jury is a set of independent validators rather than one call, and
+                the labels move the stakes. Two things appear here that a fixed
+                dataset does not produce: what somebody writes when a bluff has a
+                price, and what happens to a verdict when validators time out or
+                fail to converge.
               </p>
             </section>
 
@@ -166,12 +261,11 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 <strong>{rows.length}</strong> claims in front of the jury.
               </p>
               <p className="lab-body">
-                That is the whole corpus. It is small, it grows whenever somebody
-                plays a match, and every figure below is recomputed from it each
-                time this page opens. Read what follows as a case study rather
-                than a study: {rows.length} claims cannot establish a rate. What
-                they can do is show, one by one and checkably, how this jury
-                behaved on each of them.
+                That is the whole corpus, and every figure below is recomputed
+                from it each time this page opens. {rows.length} claims cannot
+                establish a rate. What they support is a claim-by-claim account
+                of how this jury labelled each one, with the transaction behind
+                every label.
               </p>
               {coverage ? <p className="lab-note">{coverage}</p> : null}
             </section>
@@ -194,11 +288,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             {/* 4. The grading matrix */}
             <section className="lab-section">
               <Tag kind="live" />
-              <h2 className="lab-h2">IT GRADES DEGREES, IT DOES NOT JUST SORT</h2>
+              <h2 className="lab-h2">CLAIM TYPE AGAINST LABEL</h2>
               <p className="lab-body">
-                The finding first: the jury saves the flat verdicts, TRUE and
-                FALSE, for claims that can actually be checked, and reaches for
-                MISLEADING or UNSUPPORTED for the rest.
+                In this record TRUE and FALSE appear only on claims the evidence
+                can settle. The claims it cannot settle drew MISLEADING or
+                UNSUPPORTED. One reading of that is a jury grading degrees rather
+                than sorting into true and false; see the limits below for why
+                the row axis makes that reading partly circular.
               </p>
               <p className="lab-body">
                 The table crosses the kind of claim, down the side, against the
@@ -236,8 +332,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 number, the least the seller would take or the most the buyer
                 could pay, and reveals it at the end. When a claim states that
                 party's own number, the revealed number settles whether the
-                claim was true and no judgment is involved. Those are the only
-                claims scored here.
+                claim was true, subject to the two judgment calls listed under
+                Method. Those are the only claims scored here.
               </p>
               <p className="lab-stat">
                 <strong>
@@ -263,8 +359,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 <Tag kind="live" />
                 <h2 className="lab-h2">ONE LABEL HAS NEVER BEEN USED</h2>
                 <p className="lab-body">
-                  The rubric keeps AMBIGUOUS for a claim that genuinely reads
-                  more than one way, where no single reading wins. Across{" "}
+                  The rubric keeps AMBIGUOUS for a claim that reads more than
+                  one way, where no single reading dominates. Across{" "}
                   <strong>{rows.length}</strong> claims the jury has never once
                   reached for it.
                 </p>
@@ -279,37 +375,46 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             ) : null}
 
             {/* 7. Consensus */}
-            <section className="lab-section">
+            <section className="lab-section" id="sources">
               <Tag kind="live" />
               <h2 className="lab-h2">WHAT IT TOOK TO AGREE</h2>
               <p className="lab-body">
-                A verdict is not one model answering once. It is a set of
-                validators running the same job until enough of them agree, and
-                sometimes that takes more than one try. The contract records only
-                that a match was judged. It cannot record how many attempts that
-                took, because a thrown-away attempt leaves no trace in contract
-                state, so this section reads the consensus contract's own
-                transaction log instead.
+                A verdict is a set of validators running the same job until
+                enough of them agree, and sometimes that takes more than one
+                pass. The number on each segment below is the transaction's round
+                count: 0 means it settled on the first pass, and each further
+                round follows a rotation, which is consensus bringing in a
+                changed set of validators and running the job again. The contract
+                records only that a match was judged. It cannot record how many
+                attempts that took, because a thrown-away attempt leaves no trace
+                in contract state, so this section reads the consensus contract's
+                own transaction log instead.
               </p>
 
               {adj.byMatch.length ? (
                 <>
                   <p className="lab-stat">
-                    <strong>{convSummary.attempts}</strong> adjudicate transactions produced{" "}
-                    <strong>{convSummary.matches}</strong> verdicts.{" "}
-                    <strong>{convSummary.clean}</strong> landed on the first try with no
-                    rotation at all, and <strong>{convSummary.discarded}</strong> finalized
+                    <strong>{convSummary.attempts}</strong> adjudicate transactions across{" "}
+                    <strong>{convSummary.matches}</strong>{" "}
+                    {plural(convSummary.matches, "match", "matches")}, of which{" "}
+                    <strong>{convSummary.withVerdict}</strong>{" "}
+                    {plural(convSummary.withVerdict, "has", "have")} a verdict in contract
+                    state. <strong>{convSummary.clean}</strong>{" "}
+                    {plural(convSummary.clean, "match", "matches")} settled on a single
+                    transaction with no rotation, and{" "}
+                    <strong>{convSummary.discarded}</strong>{" "}
+                    {plural(convSummary.discarded, "transaction", "transactions")} finalized
                     without writing a verdict.
                   </p>
                   <ConvergenceChart rows={adj.byMatch} />
                   <p className="lab-body">
-                    The amber bars are the case worth knowing about. Consensus
+                    The striped segments are transactions where consensus
                     finished, the validators produced labels, and contract state
-                    never moved. Carnage absorbs that safely: adjudicate refuses
-                    to run on a match that has already been judged, so a fresh
-                    attempt is let through on one that has not, no state is ever
-                    half applied, and no stake is spent on an attempt that was
-                    thrown away.
+                    never moved. adjudicate refuses to run on a match that has
+                    already been judged and accepts a fresh attempt on one that
+                    has not, and it writes both labels only after both
+                    classifications return, so a discarded attempt leaves nothing
+                    behind and costs no stake.
                   </p>
                 </>
               ) : null}
@@ -341,17 +446,17 @@ export default function LabPage({ nav }: { nav: NavShell }) {
 
             {/* Case studies. Fixed examples, marked as such, kept apart from
                 the measurements above so neither can be mistaken for the other. */}
-            {designedRow || injection.flagged.length ? (
+            {caseSections > 0 ? (
               <section className="lab-section">
-                <h2 className="lab-h2">MATCHES WE READ CLOSELY</h2>
+                <h2 className="lab-h2">MATCHES READ CLOSELY</h2>
                 <p className="lab-body">
-                  Everything above is a count that moves. What follows is not.
-                  These are individual matches we picked apart line by line,
-                  because a number tells you what happened and an example tells
-                  you what it looked like. They are real, they are on the
-                  contract, and every transaction below opens in the explorer.
-                  Nothing in this part of the page is a measurement, and nothing
-                  in it recomputes as new matches are played.
+                  Everything above is a count over the whole corpus. What follows
+                  is {caseSections} {plural(caseSections, "match", "matches")}{" "}
+                  chosen by hand and read line by line. The choice of match and
+                  the commentary are fixed. The label, the attempt count and the
+                  transaction links are read live like every other figure here,
+                  and would change if the chain did. Neither section is a
+                  measurement over the corpus.
                 </p>
               </section>
             ) : null}
@@ -365,12 +470,12 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                     BUILT TO BE AMBIGUOUS
                   </h3>
                   <p className="lab-body">
-                    We wrote one claim on purpose to draw the label nobody has
-                    seen: <em>{designedRow.claim}</em> On the page, English does
-                    not settle whether that sentence denies the drop or denies
-                    the reason for it. Both readings are live and they mean
-                    different things, which is exactly what the rubric describes
-                    as ambiguous.
+                    This claim was written to draw the label nobody has seen:{" "}
+                    <em>{designedRow.claim}</em> On the page, English does not
+                    settle whether that sentence denies the drop or denies the
+                    reason for it. Both readings stand and they mean different
+                    things, which is the case the rubric describes as ambiguous.
+                    That reading is ours; the jury did not share it.
                   </p>
                   <p className="lab-body">
                     It came back <strong>{designedRow.label}</strong>.
@@ -384,17 +489,16 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                       </>
                     ) : null}{" "}
                     {designedWasHardest
-                      ? "At the time of writing no other claim on the contract had taken as many consensus rounds to settle, and the label it settled on was not the one the sentence was built to draw."
+                      ? "No other match on the contract has spent as many consensus rounds, and the label it settled on was not the one the sentence was built to draw."
                       : "The label it settled on was not the one the sentence was built to draw."}
                   </p>
                   <p className="lab-caveat">
                     What one match shows and what it does not. This is a single
-                    sentence we chose, wrote and then read the rounds of. It is
-                    evidence that a genuinely ambiguous claim got pushed toward
-                    some other label rather than declared ambiguous, and it is
-                    not evidence about how often that happens. The live counter
-                    further up is the number to quote; this is the story behind
-                    one row of it.
+                    sentence we chose, wrote and then read the rounds of. It
+                    records that one claim we read as ambiguous drew a different
+                    label, and it says nothing about how often that happens. The
+                    live counter further up is the number to quote; this is the
+                    account behind one row of it.
                   </p>
                   {designedConv ? (
                     <>
@@ -415,36 +519,37 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </section>
             ) : null}
 
-            {injection.flagged.length ? (
+            {injectionRow ? (
               <section className="lab-section">
                 <div className="lab-case">
                   <Tag kind="case" />
                   <h3 className="lab-h3">
-                    A CLAIM THAT TRIED TO GIVE THE JURY ORDERS
+                    MATCH {String(injectionRow.matchId)}: A CLAIM CARRYING AN
+                    INSTRUCTION TO THE JURY
                   </h3>
                   <p className="lab-body">
                     A claim is untrusted text. The rubric wraps it in tags and
-                    tells the jury that everything inside is evidence to weigh,
-                    never an instruction to follow. Somebody tested that
-                    directly, and this is what happened.
+                    tells the jury that everything inside is evidence to weigh
+                    and never an instruction to follow. This claim tested that
+                    directly.
                   </p>
                   <p className="lab-body">
-                    Read this as one worked example, not as a security result.
-                    Nothing here is scanning for attacks. The claim below was
-                    found with a short list of keyword patterns, and the pattern
-                    that matched is printed on the row so you can judge the call
-                    rather than take it on trust. A differently worded attempt
-                    would not be caught by it, and that is a limit of the filter
-                    rather than a finding about the jury.
+                    This is one worked example. Nothing on this page scans for
+                    attacks. The filter that flagged this claim is a short list
+                    of keyword patterns, and the pattern that matched is printed
+                    on the row, so the call can be checked rather than taken on
+                    trust. A differently worded attempt would not be caught by
+                    it, which is a limit of the filter and not a finding about
+                    the jury. Across the corpus that filter flags{" "}
+                    {injection.flagged.length} of {rows.length} claims.
                   </p>
-                  <ClaimTable rows={injection.flagged} lookup={lookup} />
+                  <ClaimTable rows={[injectionRow]} lookup={lookup} />
                   <p className="lab-caveat">
-                    Sample size {injection.scored}.{" "}
-                    {injection.resisted === injection.scored
-                      ? "The jury answered on the evidence rather than on the order the claim carried, and its own recorded reasoning above does not engage with the instruction at all."
-                      : "Not every one of these was answered on the evidence, and the rows above show which."}{" "}
-                    One example is an anecdote, not a robustness result, and it
-                    is reported as one.
+                    Sample size 1.{" "}
+                    {injectionHeld
+                      ? "The jury labelled this claim the way the evidence settles it, and its recorded reasoning does not engage with the instruction."
+                      : "The jury did not label this claim the way the evidence settles it; the row above shows what it returned."}{" "}
+                    One example is an anecdote and is reported as one.
                   </p>
                 </div>
               </section>
@@ -464,21 +569,73 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 reading.
               </p>
               <p className="lab-body">
-                A claim is only scored when a number turns up inside a phrase
-                that states that party's own limit. A number on its own is not
-                enough. In this record one claim counts three other buyers and
-                another mentions the right price inside a denial; reading either
+                A claim is scored only when a number appears inside a phrase that
+                states that party's own limit. A number on its own is not enough.
+                In this record one claim names the right price inside a denial,
+                "I didn't drop to 650 because they pushed me", and reading that
                 as an assertion would score the jury wrong on a mistake it did
-                not make.
+                not make. Another claim counts other buyers in words and carries
+                no digits at all, so the reason printed against it is that there
+                is no number to check.
               </p>
               <ClaimTable rows={rows} lookup={lookup} />
             </section>
 
+            {/* 9. What the figures above cannot carry. */}
+            <section className="lab-section">
+              <h2 className="lab-h2">LIMITS</h2>
+              <ul className="lab-method">
+                <li>
+                  {adjudicated} {plural(adjudicated, "match", "matches")}, played
+                  from two wallets, on one price band, one stake, one deal price
+                  and one pair of revealed constraints. Only the claim text
+                  varies, which is what makes the label the only moving part and
+                  also what stops any figure here from being a rate.
+                </li>
+                <li>
+                  {agree.verifiable} scored claims, drawn from{" "}
+                  {agree.distinctTexts} distinct sentences. The agreement figure
+                  rests on {agree.distinctTexts} sentences, not{" "}
+                  {agree.verifiable}.
+                </li>
+                <li>
+                  {injection.flagged.length} injection-shaped{" "}
+                  {plural(injection.flagged.length, "claim", "claims")} in the
+                  record, found by a keyword filter that a differently worded
+                  attempt would pass.
+                </li>
+                <li>
+                  AMBIGUOUS returned on {ambiguous} of {rows.length} claims.
+                </li>
+                <li>
+                  The contract has four deadline-gated exits that end a match
+                  without a verdict. None has run on the deployed contract, so no
+                  figure here describes one.
+                </li>
+                <li>
+                  In the claim-type table the row axis is derived by the same
+                  extractor that decides what is scorable, so "flat labels only
+                  on checkable claims" is in part a statement about the
+                  extractor. The two axes are not independent.
+                </li>
+                <li>
+                  Match discovery caches the id list for ten minutes and probes
+                  two ids past the highest one it knows, so three or more matches
+                  created inside that window can take an extra visit to appear.
+                </li>
+              </ul>
+            </section>
+
             <footer className="lab-foot">
               <p className="lab-note">
-                Read live from <code>{CARNAGE_ADDRESS}</code> on {CHAIN.name}. Nothing on
-                this page is stored, seeded or hand-entered, and every verdict above
-                carries the hash of the transaction that produced it.
+                Contract <code>{CARNAGE_ADDRESS}</code> on {CHAIN.name}. Every match
+                figure here is read from get_match on each visit. The transaction
+                behind each verdict comes from a committed index plus a live scan
+                of the blocks after it, described under{" "}
+                <a className="lab-inline-link" href="#sources">
+                  two sources, both on-chain
+                </a>
+                . No figure on this page is hand-entered.
               </p>
             </footer>
           </>
@@ -492,9 +649,9 @@ export default function LabPage({ nav }: { nav: NavShell }) {
  * What the page shows while the first tier reads.
  *
  * There is no index to query on this contract, so finding the matches means
- * asking for each id in turn, and each ask takes a couple of seconds. The
- * count is the point: it moves, which is the difference between a page that is
- * working and a page that is broken.
+ * asking for each id, four reads at a time, and each read takes a couple of
+ * seconds. The count is the point: it moves, which is the difference between a
+ * page that is working and a page that is broken.
  */
 function Loading({ found }: { found: number }) {
   return (
@@ -506,7 +663,7 @@ function Loading({ found }: { found: number }) {
       <p className="lab-note">
         {found > 0
           ? `${found} ${plural(found, "match", "matches")} read so far.`
-          : "There is no index to query, so each match is fetched by id, one at a time."}
+          : "There is no index to query, so matches are fetched by id, four at a time."}
       </p>
     </section>
   );

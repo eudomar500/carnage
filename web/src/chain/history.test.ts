@@ -200,10 +200,12 @@ describe("convergence figures from the index alone", () => {
       .map(([id, a]) => convergenceOf(BigInt(id), [...a].sort((x, y) => x.block - y.block)))
       .sort((a, b) => Number(a.matchId - b.matchId));
     // Verified against a full backwards walk of the consensus log: ten
-    // adjudicate transactions produced eight verdicts, five landed on the
-    // first try with no rotation, and two finalized without writing one.
+    // adjudicate transactions across eight matches, all eight carrying a
+    // verdict in contract state, five matches settled on a single transaction
+    // with no rotation, and two transactions finalized without writing one.
     expect(convergenceSummary(rows)).toEqual({
       matches: 8,
+      withVerdict: 8,
       attempts: 10,
       clean: 5,
       discarded: 2,

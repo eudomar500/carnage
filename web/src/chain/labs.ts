@@ -7,8 +7,10 @@ import type { Role } from "./roles";
  * The hard part is ground truth. A claim is free text and the evidence is one
  * integer, so for most claims there is no objective answer to compare a label
  * against. For some there is: when a claim states this party's own constraint
- * as a number, the revealed number settles whether that statement was true,
- * and no judgment is involved.
+ * as a number, the revealed number settles whether that statement was true.
+ * Two judgment calls remain inside that rule, both narrowing what is scored
+ * rather than deciding a truth: the plausibility band below, and the refusal
+ * to score a bound that understates the real constraint.
  *
  * So claims are sorted into two tiers. Verifiable claims carry a computed
  * truth and are scored. Interpretive claims are shown with their verdict and
@@ -16,12 +18,13 @@ import type { Role } from "./roles";
  * figure. The refusal reason is displayed, so every exclusion is auditable
  * rather than a silent drop.
  *
- * The extraction is deliberately narrow. Two claims in the live record show
- * why. "I have three other buyers lined up at better prices" carries a number
- * that is not a price, and "I didn't drop to 650 because they pushed me"
- * carries the right price inside a frame that asserts nothing about the
- * constraint. A reader that grabbed any integer would score the jury wrong on
- * both, and in the direction of accusing it of a mistake it did not make.
+ * The extraction is deliberately narrow. "I didn't drop to 650 because they
+ * pushed me" is the case that matters: it carries the right price inside a
+ * frame that asserts nothing about the constraint, so a reader that grabbed
+ * any integer would score the jury wrong, in the direction of accusing it of
+ * a mistake it did not make. A claim whose only quantity is spelled as a word
+ * carries no digits at all and is refused one step earlier, for having no
+ * number to check.
  */
 
 /* ---------- numeric extraction ------------------------------------------ */
@@ -316,6 +319,12 @@ export type MatchConvergence = {
   clean: boolean;
   /** Attempts that finalized without their verdict being applied. */
   discarded: number;
+  /**
+   * At least one attempt was applied, so this match has a verdict in contract
+   * state. False while every attempt so far has been discarded, which is a
+   * match still waiting rather than a match with a verdict.
+   */
+  hasVerdict: boolean;
 };
 
 const APPLIED_RESULTS = new Set(["AGREE", "MAJORITY_AGREE"]);
@@ -332,11 +341,19 @@ export function convergenceOf(matchId: bigint, attempts: Attempt[]): MatchConver
     attempts,
     clean: attempts.length === 1 && discarded === 0 && attempts[0].rounds === 0,
     discarded,
+    hasVerdict: attempts.some((a) => a.applied),
   };
 }
 
 export type ConvergenceSummary = {
+  /** Matches with at least one adjudicate transaction in the log. */
   matches: number;
+  /**
+   * Of those, matches where an attempt was applied. Kept separate from
+   * `matches` because a match whose every attempt was discarded appears in the
+   * log without a verdict, and counting it as one would overstate the record.
+   */
+  withVerdict: number;
   attempts: number;
   clean: number;
   discarded: number;
@@ -345,6 +362,7 @@ export type ConvergenceSummary = {
 export function convergenceSummary(all: MatchConvergence[]): ConvergenceSummary {
   return {
     matches: all.length,
+    withVerdict: all.filter((c) => c.hasVerdict).length,
     attempts: all.reduce((n, c) => n + c.attempts.length, 0),
     clean: all.filter((c) => c.clean).length,
     discarded: all.reduce((n, c) => n + c.discarded, 0),

@@ -66,7 +66,7 @@ describe("claims the evidence cannot settle", () => {
   });
 
   it("refuses a count that is not a price", () => {
-    // The number here is three buyers, not a price. Reading it as one would
+    // The number here counts buyers, not a price. Reading it as one would
     // score the jury wrong on a mistake it did not make.
     const r = gt("I have 34 other buyers lined up at better prices.", "holder", 650n);
     expect(r.verifiable).toBe(false);
@@ -286,6 +286,26 @@ describe("convergence per match", () => {
     expect(convergenceOf(1n, [attempt({ rounds: 2 })]).clean).toBe(false);
   });
 
+  it("reports no verdict while every attempt has been discarded", () => {
+    const c = convergenceOf(9n, [
+      attempt({ txId: "0x1", resultName: "TIMEOUT", rounds: 6, applied: false }),
+      attempt({ txId: "0x2", resultName: "NO_MAJORITY", rounds: 6, applied: false }),
+    ]);
+    expect(c.hasVerdict).toBe(false);
+    expect(c.discarded).toBe(2);
+    expect(c.clean).toBe(false);
+  });
+
+  it("does not count a match with no applied attempt as a verdict", () => {
+    const s = convergenceSummary([
+      convergenceOf(1n, [attempt({})]),
+      convergenceOf(2n, [attempt({ txId: "0x1", resultName: "TIMEOUT", applied: false })]),
+    ]);
+    expect(s.matches).toBe(2);
+    expect(s.withVerdict).toBe(1);
+    expect(s.discarded).toBe(1);
+  });
+
   it("counts a discarded attempt followed by an applied one", () => {
     const c = convergenceOf(3n, [
       attempt({ txId: "0x1", resultName: "TIMEOUT", rounds: 6, applied: false }),
@@ -305,6 +325,6 @@ describe("convergence per match", () => {
         attempt({ txId: "0x2", rounds: 6 }),
       ]),
     ]);
-    expect(s).toEqual({ matches: 3, attempts: 4, clean: 2, discarded: 1 });
+    expect(s).toEqual({ matches: 3, withVerdict: 3, attempts: 4, clean: 2, discarded: 1 });
   });
 });

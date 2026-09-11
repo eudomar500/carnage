@@ -1855,12 +1855,32 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 /* A case study is boxed, so it reads as a specimen rather than a section. */
 .lab-case { border: 1px solid rgba(255, 255, 255, 0.14); padding: 20px; }
 
+/* Method and limits: one claim per line, read as a list rather than prose. */
+.lab-method {
+  margin: 0; padding: 0 0 0 18px; max-width: 74ch;
+  font-size: 13px; line-height: 1.75; color: var(--ink-dim);
+}
+.lab-method li { margin: 0 0 12px; }
+.lab-method li:last-child { margin-bottom: 0; }
+.lab-method strong { color: var(--ink); }
+
+.lab-claims-legend {
+  margin: 0 0 18px; max-width: 74ch;
+  font-size: 12px; line-height: 1.7; color: var(--ink-dim);
+}
+.lab-claims-legend strong { color: var(--ink); }
+
+.lab-inline-link { color: inherit; border-bottom: 1px solid var(--steel-dim); }
+.lab-inline-link:hover { border-bottom-color: var(--crimson); }
+
 /* label distribution */
 .lab-bars { display: flex; flex-direction: column; gap: 9px; margin: 4px 0 8px; }
 .lab-bar { display: grid; grid-template-columns: 130px 1fr 34px; align-items: center; gap: 12px; }
 .lab-bar-name { font-size: 10.5px; letter-spacing: 0.14em; color: var(--ink-dim); }
 .lab-bar-track { height: 16px; background: rgba(255, 255, 255, 0.05); position: relative; }
 .lab-bar-fill { display: block; height: 100%; background: var(--crimson-dim); }
+/* Share of the corpus, printed next to the count so the track is readable. */
+.lab-bar-pct { font-size: 10px; color: var(--ink-faint); letter-spacing: 0.04em; }
 .lab-bar-fill--true { background: var(--green); }
 .lab-bar-fill--misleading { background: var(--amber); }
 .lab-bar-fill--false { background: var(--crimson); }
@@ -1893,7 +1913,29 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
   height: 18px; background: var(--crimson); color: #fff;
   font-size: 10px; letter-spacing: 0.06em; min-width: 18px;
 }
-.lab-conv-seg--dropped { background: var(--amber); color: #120f0d; }
+/*
+ * Stripes plus the x the chart writes into the segment, so applied and
+ * discarded are separable without colour vision.
+ */
+.lab-conv-seg--dropped {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--amber),
+    var(--amber) 4px,
+    rgba(0, 0, 0, 0.38) 4px,
+    rgba(0, 0, 0, 0.38) 8px
+  );
+  color: #120f0d;
+}
+.lab-conv-swatch--dropped {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--amber),
+    var(--amber) 3px,
+    rgba(0, 0, 0, 0.38) 3px,
+    rgba(0, 0, 0, 0.38) 6px
+  );
+}
 .lab-conv-verdict { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.04em; }
 .lab-conv-key { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
 .lab-conv-keyitem { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-faint); }

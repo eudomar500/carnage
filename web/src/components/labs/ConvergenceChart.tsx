@@ -4,12 +4,14 @@ import type { MatchConvergence } from "../../chain/labs";
 /**
  * One row per match, one segment per adjudicate transaction.
  *
- * Segment width is the number of consensus rounds that transaction burned, so
- * a verdict reached on the first try is a stub and one fought through
- * rotations is long. A segment that finalized without its verdict being
- * applied is amber: consensus finished, and the contract state did not move.
+ * Segment width is the transaction's round count plus one, scaled to the
+ * longest attempt on the chart, so a verdict settled on the first pass is a
+ * stub and one that ran through rotations is long. The plus one is what keeps
+ * a zero-round attempt visible at all.
  *
- * That distinction is the whole point of the chart. It is invisible in
+ * A transaction that finalized without its verdict being applied is drawn
+ * striped and carries an x in the segment, so applied and discarded are
+ * distinguishable without relying on colour. That distinction is invisible in
  * get_match, which records only that a match ended up adjudicated.
  */
 export default function ConvergenceChart({ rows }: { rows: MatchConvergence[] }) {
@@ -24,13 +26,16 @@ export default function ConvergenceChart({ rows }: { rows: MatchConvergence[] })
             {row.attempts.map((a) => {
               const width = ((a.rounds + 1) / widest) * 100;
               const url = explorerTxUrl(a.txId);
-              const title = `${a.statusName} | ${a.resultName} | ${a.rounds} rounds`;
+              const title = `${a.statusName} | ${a.resultName} | ${a.rounds} rounds | ${
+                a.applied ? "verdict applied" : "discarded"
+              }`;
               const seg = (
                 <span
                   className={`lab-conv-seg${a.applied ? "" : " lab-conv-seg--dropped"}`}
                   style={{ width: `${Math.max(width, 6)}%` }}
                   title={title}
                 >
+                  {a.applied ? "" : "x"}
                   {a.rounds > 0 ? a.rounds : ""}
                 </span>
               );
@@ -45,10 +50,12 @@ export default function ConvergenceChart({ rows }: { rows: MatchConvergence[] })
           </span>
           <span className="lab-conv-verdict">
             {row.clean
-              ? "converged first try"
-              : row.discarded > 0
-                ? `${row.discarded} discarded, then applied`
-                : `${row.attempts[0]?.rounds ?? 0} rounds to converge`}
+              ? "settled on the first pass"
+              : row.discarded === 0
+                ? `${row.attempts[0]?.rounds ?? 0} rounds to settle`
+                : row.hasVerdict
+                  ? `${row.discarded} discarded, then applied`
+                  : `${row.discarded} discarded, no verdict written yet`}
           </span>
         </div>
       ))}
@@ -57,10 +64,12 @@ export default function ConvergenceChart({ rows }: { rows: MatchConvergence[] })
           <span className="lab-conv-swatch" /> verdict applied
         </span>
         <span className="lab-conv-keyitem">
-          <span className="lab-conv-swatch lab-conv-swatch--dropped" /> finalized without writing a
-          verdict
+          <span className="lab-conv-swatch lab-conv-swatch--dropped" /> striped and marked x:
+          finalized without writing a verdict
         </span>
-        <span className="lab-conv-keyitem">segment width is consensus rounds</span>
+        <span className="lab-conv-keyitem">
+          segment width is the round count plus one, scaled to the longest attempt here
+        </span>
       </div>
     </div>
   );

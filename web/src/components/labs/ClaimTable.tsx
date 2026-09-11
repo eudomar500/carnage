@@ -37,8 +37,19 @@ export default function ClaimTable({
   rows: ClaimRow[];
   lookup?: VerdictLookup;
 }) {
+  const anyScored = rows.some((r) => r.truth.verifiable);
+
   return (
     <div className="lab-claims">
+      {anyScored ? (
+        <p className="lab-claims-legend">
+          A <strong>direct</strong> frame names the constraint and gives its value:
+          "My minimum price is 650." A <strong>bound</strong> frame states a limit
+          the party will not cross, which asserts the same thing from the other
+          side: "I can't go below 780." Those are the only two shapes this page
+          scores.
+        </p>
+      ) : null}
       {rows.map((r) => {
         const key = `${r.matchId}-${r.role}`;
         const verifiable = r.truth.verifiable;
@@ -92,7 +103,7 @@ function Proof({ matchId, lookup }: { matchId: bigint; lookup: VerdictLookup }) 
   if (!tx) {
     return (
       <p className="lab-proof lab-proof--waiting">
-        <span className="lab-proof-tag">ON-CHAIN PROOF</span>
+        <span className="lab-proof-tag">ON-CHAIN PROOF</span>{" "}
         {lookup.scanning ? "looking up the transaction that wrote this verdict..." : lookup.missingNote}
       </p>
     );
@@ -101,8 +112,8 @@ function Proof({ matchId, lookup }: { matchId: bigint; lookup: VerdictLookup }) 
   const url = explorerTxUrl(tx.txId);
   return (
     <p className="lab-proof">
-      <span className="lab-proof-tag">ON-CHAIN PROOF</span>
-      written by adjudicate in block {tx.block}, status {tx.statusName}
+      <span className="lab-proof-tag">ON-CHAIN PROOF</span>{" "}
+      written by adjudicate in block {tx.block}, status {tx.statusName}{" "}
       <code className="lab-proof-hash">{tx.txId}</code>
       {url ? (
         <a className="inflight-link" href={url} target="_blank" rel="noreferrer">
