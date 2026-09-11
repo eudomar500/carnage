@@ -1,4 +1,5 @@
 import { isStrike, type JudgeMood } from "../chain/phase";
+import { asset } from "../lib/asset";
 
 /**
  * The central judge.
@@ -10,7 +11,7 @@ import { isStrike, type JudgeMood } from "../chain/phase";
 export default function JudgeTrex({ mood, strikeKey }: { mood: JudgeMood; strikeKey: number }) {
   return (
     <div className={`judge judge--${mood}`} key={isStrike(mood) ? strikeKey : undefined}>
-      <img className="judge-img" src="/assets/trex-central.webp" alt="" draggable={false} />
+      <img className="judge-img" src={asset("assets/trex-central.webp")} alt="" draggable={false} />
       <span className="judge-eye" aria-hidden="true" />
       <span className="judge-eye-flare" aria-hidden="true" />
     </div>

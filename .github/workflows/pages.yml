@@ -1,0 +1,57 @@
+name: Pages
+
+# The site is a static bundle with no server, so publishing is just building
+# web/ and handing dist to Pages. Routes are query parameters, which is what
+# makes that enough: every URL resolves to the same index.html, so a refresh
+# on ?lab=1 or ?match=3 needs no rewrite rule.
+on:
+  push:
+    branches: [main]
+
+# Required by the Pages actions: configure-pages and deploy-pages mint an OIDC
+# token to publish, and deploy-pages writes the deployment itself.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Two pushes in quick succession would otherwise
+# race, and the loser fails rather than being superseded, so queue instead of
+# cancelling: a cancelled run leaves the site on the older build.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # deploy-pages creates the deployment against this environment, and fails
+    # without it.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,10 +1,11 @@
 import { LockClosed, LockOpen } from "./Icons";
 import { formatToken, formatPrice, shortAddress, TOKEN_SYMBOL } from "../lib/format";
+import { asset } from "../lib/asset";
 import type { Label } from "../chain/contract";
 
 const AVATAR = {
-  HOLDER: "/assets/holder-avatar.png",
-  BUYER: "/assets/buyer-avatar.png",
+  HOLDER: asset("assets/holder-avatar.png"),
+  BUYER: asset("assets/buyer-avatar.png"),
 } as const;
 
 export type AgentCardProps = {

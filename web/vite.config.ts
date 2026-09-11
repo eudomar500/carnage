@@ -16,7 +16,15 @@ import react from "@vitejs/plugin-react";
  *
  * Vite defaults to index.html when no rollup input is given, so there is
  * nothing to declare here.
+ *
+ * `base` is the Pages project path. The site is served from
+ * eudomar500.github.io/carnage/, not from a domain root, so every emitted
+ * asset URL has to carry that prefix. Routing is unaffected: routes are query
+ * parameters and hrefFor builds them off location.href, so they inherit
+ * whatever path the page was served from and a refresh hits the same
+ * index.html either way.
  */
 export default defineConfig({
+  base: "/carnage/",
   plugins: [react()],
 });
