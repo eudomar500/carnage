@@ -34,6 +34,16 @@ Every one of those is permissionless except `settle`, which is reachable only
 by the contract itself, and `force_settle` exists precisely so that even that
 path cannot become a dead end.
 
+Four of those ways out have never been taken here. `refund_before_lock`,
+`resolve_no_reveal`, `resolve_inconclusive` and `force_settle` are proven in
+the direct-mode tests and nowhere else. The deployed contract's log holds the
+deployment, eight `create_match` calls, the commit, fund, anchor, price and
+reveal calls behind eight matches, ten `adjudicate`, eight `settle`, thirteen
+`claim` and the two sink-handover transactions, and nothing else. So the
+guarantee is a property of the code and the tests that pin it, not something
+the record has been made to demonstrate. That is the same standard item 4
+below applies to itself.
+
 ## Reaching a verdict
 
 The jury classifies each claim into a closed five-label enum (FALSE,
@@ -41,10 +51,13 @@ MISLEADING, AMBIGUOUS, UNSUPPORTED, TRUE) using a strict, ordered decision
 procedure. The order is not cosmetic. Validators independently re-derive the
 label and compare it against the leader's result, so the enum is closed and
 the ordering is explicit precisely to drive convergence: an ordered procedure
-with an explicit priority rule at the MISLEADING/AMBIGUOUS boundary leaves
-less room for two validators to reach different labels from the same
-evidence. The rubric states that rule directly, instructing the jury to choose
-MISLEADING even when a strained consistent reading exists.
+with explicit priority rules at the boundaries where two validators are most
+likely to split leaves less room for them to reach different labels from the
+same evidence. The rubric states both of those rules directly. Step 2 settles
+the TRUE/MISLEADING boundary, instructing the jury to choose MISLEADING even
+when a strained consistent reading exists. Step 3 settles the
+MISLEADING/AMBIGUOUS boundary: choose AMBIGUOUS only when no single reading
+dominates and the competing readings differ materially in truth value.
 
 Comparison happens on the label alone. The validator function recomputes its
 own classification and returns `mine["label"] == leaders_res.calldata["label"]`.
@@ -215,6 +228,13 @@ Resolution degrades in layers.
    and why some voted DETERMINISTIC_VIOLATION in the second, is not
    established by the data available on-chain.
 
+   Neither round is visible from contract state. `get_match` returns the match
+   as it stands, and `adjudicate` emits no event, so a discarded round exists
+   only in the consensus log. The client reads that log from a committed
+   index, `web/src/chain/history.json`, generated from the chain by
+   `npm run snapshot`, plus a live scan of the blocks after its snapshot in
+   `web/src/chain/txlog.ts`. Any reader can regenerate the index and compare.
+
    None of this touches the match. A discarded round commits nothing, so the
    match stays unresolved and both stakes stay in escrow, untouched. What the
    contract contributes is atomicity: labels, reasoning and the `adjudicated`
@@ -239,9 +259,17 @@ Resolution degrades in layers.
    refuses an adjudicated match. `force_settle` closes that: once
    `SETTLE_GRACE_SECONDS` (7200, two hours) has passed since `adjudicated_at`,
    any caller can push the same settlement through, applying the same stored
-   labels through the same rule. The grace period is deliberately longer than
-   the appeal window, so on a healthy chain the automatic path always gets
-   there first and this one never runs.
+   labels through the same rule. The grace period is sized to outlast the
+   appeal window by design, so that on a healthy chain the automatic path gets
+   there first. That is what the record shows: all eight settlements came
+   through the scheduled call, and `force_settle` has never run here.
+
+   One practical wrinkle for a caller. `adjudicated_at` is stored on the match
+   but is not exposed by `get_match`, so nothing off-chain can read when the
+   grace period opens. The client estimates it from the first time it saw the
+   match sitting adjudicated and unsettled, which can only be too cautious,
+   and the contract's own check is the real gate: trying too early costs
+   nothing but a failed simulation.
 
 Read the deadlines as an ordering, which `create_match` enforces:
 `lock_deadline` sits a full reveal window before `reveal_deadline`, and
@@ -260,10 +288,10 @@ adjudication. Instead `adjudicate` schedules the call on itself:
 
 `settle` refuses any sender other than the contract address, requires the
 match to be adjudicated, and refuses to run twice. It then applies
-`_settle_side` once per side and credits claimable balances. It emits no
-transfers of its own, deliberately: a transfer emitted from inside it would be
-another separately scheduled finalized message, chaining a second appeal
-window behind the first.
+`_settle_side` once per side, credits claimable balances and emits
+`MatchSettled`. It emits no transfers of its own, deliberately: a transfer
+emitted from inside it would be another separately scheduled finalized
+message, chaining a second appeal window behind the first.
 
 `force_settle` applies exactly the same body through `_apply_settlement`, and
 both are guarded by the `settled` flag, which is written before any credit.
@@ -272,7 +300,7 @@ pay out.
 
 `_settle_side` is the whole payout rule:
 
-| Label       | To the agent        | To the counterparty |
+| Label       | To the party        | To the counterparty |
 | ----------- | ------------------- | ------------------- |
 | TRUE        | full stake          | nothing             |
 | AMBIGUOUS   | full stake          | nothing             |
@@ -280,7 +308,7 @@ pay out.
 | MISLEADING  | `stake - stake//2`  | `stake//2`          |
 | FALSE       | nothing             | full stake          |
 
-Integer division rounds in the agent's favour, so an odd stake conserves
+Integer division rounds in the party's favour, so an odd stake conserves
 exactly with no rounding leak. Each side is scored on its own label
 independently.
 
@@ -291,9 +319,10 @@ pay two liars exactly what two honest players get, which is not a penalty at
 all. The amounts in the table do not change, only the destination, and only in
 that case: a single liar still pays the honest counterparty exactly as before.
 
-Each party then withdraws its own credited balance with `claim`. The three
-role checks are independent rather than first-match-wins, so an address that
-is both a party and the sink is paid both in one call. The payout goes out
+Each party then withdraws its own credited balance with `claim`, which emits
+`MatchClaimed`. The three role checks are independent rather than
+first-match-wins, so an address that is both a party and the sink is paid both
+in one call. The payout goes out
 through `emit_transfer(value=amount, on="finalized")`, so the funds move when
 the claim transaction itself finalizes, not when it is accepted. Both the
 settled ledger and the actual movement of funds are gated on true finality,
@@ -314,6 +343,15 @@ A mistyped or unowned address can therefore never take the sink, because it
 would have to send the acceptance itself. A later proposal replaces an earlier
 one, and proposing the zero address cancels a pending handover outright.
 
+On this deployment the handover has been run. The sink started as the deployer
+and now sits at `0x35294C883716E2fd7614eD85348bF4F712BCe07a`:
+`propose_sink_address` in
+`0x75a318a742bded372eca3111b03354e3b94b08732c8b75d13078f4f1b8d1a2a2`, sent by
+the sink at the time, then `accept_sink_address` in
+`0xb0419ebbd84b0b2e7abbda58c191cdc61cb0dc8376ed47527215cd397cd1fb50`, sent by
+the proposed address itself. Both are FINALIZED with result AGREE, and
+`pending_sink` is the zero address again.
+
 ## Designing a claim
 
 The sharpest input a claim can carry is an instruction aimed at the jury
@@ -325,10 +363,15 @@ told to treat everything inside the tags as the text being evaluated. Output
 is confined to the closed enum, and that confinement is checked in Python
 after the model answers rather than trusted from the prompt. A claim is also
 bounded at anchoring time: non-empty, and at most `MAX_CLAIM_CHARS`
-characters. Consensus alone does not defend against this: an injection that
-fools every validator identically would converge on the wrong answer. The
-defense lives in prompt construction and is tested adversarially as part of
-the benchmark, not assumed.
+characters, checked by `_validate_claim` when the claim is anchored.
+Consensus alone does not defend against this: an injection that fools every
+validator identically would converge on the wrong answer. The defense lives in
+prompt construction, and what is pinned is the construction itself:
+`test_injected_claim_stays_inside_claim_delimiters` runs a claim carrying an
+instruction through a mocked adjudicator whose mock only matches when the text
+arrives wrapped in the delimiters. That proves the prompt is assembled
+correctly; it says nothing about how a live model answers. The record holds
+one injection-shaped claim, which is a case and not a measurement.
 
 ## Coherence, recorded and not enforced
 
@@ -345,17 +388,25 @@ nothing else.
 
 ## Bounds
 
-A few limits are worth knowing, all checked at `create_match`:
+A few limits are worth knowing. Each is checked at the point where the thing
+it bounds first reaches the contract, not all in one place:
 
 - `stake_amount` and `price_ceil` are capped at `2**128 - 1`, which keeps every
-  sum in settlement far inside `u256`.
-- A salt must be between 16 and 64 bytes.
-- A claim must be non-empty and at most 2000 characters.
+  sum in settlement far inside `u256`. Checked at `create_match`.
 - `holder` and `buyer` must differ, and the price band must be positive and
-  widening.
-- Every externally reachable method other than `fund_holder` and `fund_buyer`
-  rejects a transfer of value, so nothing can arrive in the contract without a
-  claimable credit behind it.
+  widening. Checked at `create_match`.
+- A salt must be between 16 and 64 bytes. Checked in `_decode_salt`, at
+  reveal: the salt is not on-chain before then, and a commitment is opaque
+  bytes until it is opened.
+- A claim must be non-empty and at most `MAX_CLAIM_CHARS` (2000) characters.
+  Checked in `_validate_claim`, at anchoring, which is the bound "Designing a
+  claim" above describes.
+- Value is rejected on every call that is not `fund_holder` or `fund_buyer`,
+  through `_require_no_value`, so nothing can arrive in the contract without a
+  claimable credit behind it. `settle` is the one method that does not call
+  it, and deliberately: its sender check already limits it to the contract's
+  own scheduled self-call, which never carries value, and a revert on that
+  path would hold the payout until the `force_settle` grace period opened.
 
 An earlier deployment of this contract was audited before this one was
 written. Every finding from that audit is resolved here; see

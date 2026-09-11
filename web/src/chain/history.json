@@ -2,7 +2,7 @@
   "contract": "0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A",
   "chainId": 4221,
   "deployBlock": 21112681,
-  "snapshotBlock": 21377164,
+  "snapshotBlock": 21438238,
   "transactions": [
     {
       "hash": "0xce21d6982dcef81c8bbd1446ccc80f69183a7bf977df50add3417098b515fe53",
@@ -1200,6 +1200,26 @@
       "method": "claim",
       "matchId": "8",
       "sender": "0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53",
+      "status": "FINALIZED",
+      "result": "AGREE",
+      "rounds": 0
+    },
+    {
+      "hash": "0x75a318a742bded372eca3111b03354e3b94b08732c8b75d13078f4f1b8d1a2a2",
+      "block": 21377845,
+      "method": "propose_sink_address",
+      "matchId": null,
+      "sender": "0xF27E3A6d7Bf4BfC0A837020FD74E73055aF17D53",
+      "status": "FINALIZED",
+      "result": "AGREE",
+      "rounds": 0
+    },
+    {
+      "hash": "0xb0419ebbd84b0b2e7abbda58c191cdc61cb0dc8376ed47527215cd397cd1fb50",
+      "block": 21377980,
+      "method": "accept_sink_address",
+      "matchId": null,
+      "sender": "0x35294C883716E2fd7614eD85348bF4F712BCe07a",
       "status": "FINALIZED",
       "result": "AGREE",
       "rounds": 0

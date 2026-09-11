@@ -7,9 +7,12 @@ import type { ActionId, Role } from "./roles";
  * see it.
  *
  * A transaction being ACCEPTED is not the same as the state change landing.
- * On match 2 the adjudicate transaction was accepted, the jury round was
- * discarded, and `adjudicated` stayed false forever. The UI called that a
- * success because it was watching the transaction instead of the state.
+ * The case that forced this table was an adjudicate that was accepted while
+ * the jury round was discarded, leaving `adjudicated` false forever: the UI
+ * called it a success because it was watching the transaction instead of the
+ * state. That was match 2 on the superseded deployment, before the audited
+ * contract went out. On the deployed contract the discarded rounds are
+ * matches 3 and 8, both of them finalized and neither of them written.
  *
  * So every write declares its postcondition here, in one table, and the
  * action layer refuses to report success until `landed` is observed through
