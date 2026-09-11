@@ -1841,6 +1841,32 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .lab-caveat strong { color: var(--amber); }
 
 /* The live headline. First number on the page, and it is read, never typed. */
+/*
+ * Figures line up column-wise wherever two of them sit on neighbouring lines,
+ * which is most of this page.
+ */
+.lab-stat, .lab-headline, .lab-results, .lab-matrix, .lab-conv, .lab-method {
+  font-variant-numeric: tabular-nums;
+}
+
+/* RESULTS: the figures first, one per line, above the prose that explains them. */
+.lab-results {
+  margin: 0; padding: 0; list-style: none; max-width: 74ch;
+  font-size: 14px; line-height: 1.95; color: var(--ink);
+}
+.lab-results strong { color: var(--crimson); }
+
+.lab-toc {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  margin: 20px 0 0; padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.lab-toc a {
+  font-size: 9.5px; letter-spacing: 0.14em; color: var(--ink-faint);
+  border-bottom: 1px solid transparent;
+}
+.lab-toc a:hover { color: var(--ink); border-bottom-color: var(--crimson); }
+
 .lab-headline { font-size: 15px; line-height: 1.6; color: var(--ink); margin: 16px 0 10px; }
 .lab-headline strong { color: var(--crimson); }
 
@@ -1901,18 +1927,38 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .lab-matrix-rowcount { display: block; font-size: 9.5px; color: var(--ink-faint); margin-top: 3px; }
 .lab-matrix-cell { text-align: center; font-size: 13px; color: var(--ink-faint); padding: 12px 6px; }
 .lab-matrix-cell--on { color: #fff; font-weight: 600; }
+.lab-matrix-foot th, .lab-matrix-foot td {
+  border-top: 1px solid rgba(255, 255, 255, 0.22); color: var(--ink-dim);
+}
 
 /* convergence */
 .lab-conv { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 14px; }
 .lab-conv-row { display: grid; grid-template-columns: 46px 1fr 200px; align-items: center; gap: 12px; }
 .lab-conv-id { font-size: 11px; color: var(--ink-faint); }
 .lab-conv-track { display: flex; gap: 4px; align-items: center; }
-.lab-conv-link { display: block; }
+/* The flex item, so the width the chart computes lands on a real box. */
+.lab-conv-link { display: block; min-width: 26px; }
 .lab-conv-seg {
   display: flex; align-items: center; justify-content: center;
-  height: 18px; background: var(--crimson); color: #fff;
-  font-size: 10px; letter-spacing: 0.06em; min-width: 18px;
+  width: 100%; height: 18px; background: var(--crimson); color: #fff;
+  font-size: 10px; letter-spacing: 0.06em;
 }
+/*
+ * The label for a discarded segment, on its own ground.
+ *
+ * Printed straight onto the stripes it is crossed by them at every size. The
+ * chip is capped at the segment width and clips from the right, so the
+ * narrowest segment keeps the x and drops the round count rather than
+ * shrinking the type.
+ */
+.lab-conv-chip {
+  display: inline-flex; align-items: center; max-width: 100%;
+  padding: 2px 6px; border-radius: 2px;
+  background: var(--obsidian); color: var(--ink);
+  font-size: 10px; letter-spacing: 0.06em; line-height: 1;
+  white-space: nowrap; overflow: hidden;
+}
+.lab-conv-x { font-weight: 700; margin-right: 3px; }
 /*
  * Stripes plus the x the chart writes into the segment, so applied and
  * discarded are separable without colour vision.
@@ -1921,9 +1967,9 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
   background: repeating-linear-gradient(
     45deg,
     var(--amber),
-    var(--amber) 4px,
-    rgba(0, 0, 0, 0.38) 4px,
-    rgba(0, 0, 0, 0.38) 8px
+    var(--amber) 5px,
+    #1a1410 5px,
+    #1a1410 10px
   );
   color: #120f0d;
 }
@@ -1932,8 +1978,8 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
     45deg,
     var(--amber),
     var(--amber) 3px,
-    rgba(0, 0, 0, 0.38) 3px,
-    rgba(0, 0, 0, 0.38) 6px
+    #1a1410 3px,
+    #1a1410 6px
   );
 }
 .lab-conv-verdict { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.04em; }
@@ -2029,6 +2075,8 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 .lab-foot { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px; margin-top: 20px; }
 
 @media (max-width: 720px) {
+  /* The figures stay readable, but not at a size that wraps every line. */
+  .lab-results { font-size: 13px; line-height: 1.85; }
   .lab-bar { grid-template-columns: 100px 1fr 28px; }
   .lab-conv-row { grid-template-columns: 40px 1fr; }
   .lab-conv-verdict { grid-column: 2; }

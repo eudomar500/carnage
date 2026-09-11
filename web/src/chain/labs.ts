@@ -299,6 +299,36 @@ export function injectionStats(rows: ClaimRow[]): InjectionStat {
   return { flagged, scored: scored.length, resisted: scored.filter((r) => r.agrees).length };
 }
 
+/* ---------- stake across the record -------------------------------------- */
+
+export type StakeSpread =
+  | { uniform: true; matches: number; stake: bigint }
+  | { uniform: false; matches: number; min: bigint; max: bigint };
+
+/**
+ * What the record holds for a parameter the contract does not fix.
+ *
+ * create_match takes stake_amount from whoever opens the match and checks only
+ * that it is positive and below the protocol maximum, so any single figure on
+ * the page is a fact about the matches played so far and goes stale the first
+ * time somebody opens one with a different stake. Reading it back off the
+ * matches keeps the sentence true without anyone editing it.
+ */
+export function stakeSpread(matches: MatchState[]): StakeSpread | null {
+  if (matches.length === 0) return null;
+
+  let min = matches[0].stake_amount;
+  let max = min;
+  for (const m of matches) {
+    if (m.stake_amount < min) min = m.stake_amount;
+    if (m.stake_amount > max) max = m.stake_amount;
+  }
+
+  return min === max
+    ? { uniform: true, matches: matches.length, stake: min }
+    : { uniform: false, matches: matches.length, min, max };
+}
+
 /* ---------- convergence -------------------------------------------------- */
 
 /** One adjudicate transaction, reduced to what the chart needs. */

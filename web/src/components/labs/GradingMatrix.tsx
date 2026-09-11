@@ -15,6 +15,11 @@ export default function GradingMatrix({ cells }: { cells: GradingCell[] }) {
   const max = Math.max(1, ...cells.map((c) => c.count));
   const at = (kind: string, label: Label) =>
     cells.find((c) => c.kind === kind && c.label === label)?.count ?? 0;
+  // Every claim lands in exactly one row and one column, so the column totals
+  // are the label distribution. Printing them lets a reader check the table
+  // against that chart without adding the cells up by hand.
+  const columnTotal = (label: Label) =>
+    CLAIM_KINDS.reduce((n, kind) => n + at(kind, label), 0);
 
   return (
     <div className="lab-matrix-wrap">
@@ -56,6 +61,14 @@ export default function GradingMatrix({ cells }: { cells: GradingCell[] }) {
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="lab-matrix-foot">
+            <th className="lab-matrix-row">ALL CLAIMS</th>
+            {LABELS.map((l) => (
+              <td key={l} className="lab-matrix-cell">{columnTotal(l)}</td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

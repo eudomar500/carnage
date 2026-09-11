@@ -195,7 +195,7 @@ See [web/README.md](web/README.md) for the front-end commands.
 
 **Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the eight recorded matches were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
 
-**Bradbury, and testnet GEN.** The app is pinned to GenLayer Bradbury and every stake, credit and payout is in its native GEN. Fund the seats with testnet GEN from the GenLayer faucet. Stakes are deliberately small; the record was played at 0.01 GEN a side.
+**Bradbury, and testnet GEN.** The app is pinned to GenLayer Bradbury and every stake, credit and payout is in its native GEN. Fund the seats with testnet GEN from the GenLayer faucet. The stake is set per match by whoever creates it, any amount above zero and below the protocol maximum; the eight matches on record were created with 0.01 GEN a side.
 
 **Wallet connection is plain EIP-1193.** Connecting is `eth_requestAccounts` followed by `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` when the wallet does not know Bradbury yet. Any ordinary injected EVM wallet that can switch chains works; the GenLayer snap and MetaMask Flask are not used and not needed. Salts are never stored anywhere: each is derived from a deterministic wallet signature over a fixed, match-bound message, so the only thing to carry from commit to reveal is the number that was committed.
 
@@ -209,7 +209,7 @@ A plain-language walkthrough of a full match is on the site: [How Carnage works,
 
 Carnage does not claim AI adjudication is perfect, and most of what follows is a limit the evidence has not cleared rather than a design position.
 
-The corpus is eight matches, uniform by construction, played by two wallets. That is enough to demonstrate a method and not enough to establish a rate. The stake is 0.01 GEN on a testnet: the incentive structure is fully implemented, the pressure it exerts is symbolic.
+The corpus is eight matches, uniform by construction, played by two wallets. That is enough to demonstrate a method and not enough to establish a rate. The stake on the record is 0.01 GEN on a testnet: the incentive structure is fully implemented, the pressure it exerts is symbolic.
 
 Semantic judgments can be hard and validators can disagree, which is not hypothetical here: two of ten adjudicate transactions failed to reach an accepted result. Those are limits on how confidently a claim can be judged, not on whether the money is safe. A judgment the jury cannot reach ends in a deadline-gated resolution that returns every stake.
 

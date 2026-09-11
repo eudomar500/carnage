@@ -33,15 +33,16 @@ export type VerdictLookup = {
 export default function ClaimTable({
   rows,
   lookup,
+  legend = false,
 }: {
   rows: ClaimRow[];
   lookup?: VerdictLookup;
+  /** Set on the scored table only, so the definition sits with what it defines. */
+  legend?: boolean;
 }) {
-  const anyScored = rows.some((r) => r.truth.verifiable);
-
   return (
     <div className="lab-claims">
-      {anyScored ? (
+      {legend ? (
         <p className="lab-claims-legend">
           A <strong>direct</strong> frame names the constraint and gives its value:
           "My minimum price is 650." A <strong>bound</strong> frame states a limit
@@ -71,7 +72,7 @@ export default function ClaimTable({
 
             {verifiable ? (
               <p className="lab-claim-verdict">
-                <span className="lab-claim-tier">VERIFIABLE</span>
+                <span className="lab-claim-tier">VERIFIABLE</span>{" "}
                 states {r.truth.asserted} in a {r.truth.frame} frame, so the evidence says{" "}
                 <strong>{r.truth.truth}</strong>. The jury said {r.label}:{" "}
                 <strong className={r.agrees ? "lab-agree" : "lab-disagree"}>
@@ -81,7 +82,7 @@ export default function ClaimTable({
               </p>
             ) : (
               <p className="lab-claim-verdict">
-                <span className="lab-claim-tier lab-claim-tier--open">INTERPRETIVE</span>
+                <span className="lab-claim-tier lab-claim-tier--open">INTERPRETIVE</span>{" "}
                 not scored: {r.truth.reason}.
               </p>
             )}
@@ -114,7 +115,7 @@ function Proof({ matchId, lookup }: { matchId: bigint; lookup: VerdictLookup }) 
     <p className="lab-proof">
       <span className="lab-proof-tag">ON-CHAIN PROOF</span>{" "}
       written by adjudicate in block {tx.block}, status {tx.statusName}{" "}
-      <code className="lab-proof-hash">{tx.txId}</code>
+      <code className="lab-proof-hash">tx {tx.txId}</code>
       {url ? (
         <a className="inflight-link" href={url} target="_blank" rel="noreferrer">
           OPEN IN THE EXPLORER

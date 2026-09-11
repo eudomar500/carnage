@@ -13,8 +13,11 @@ import {
   gradingMatrix,
   injectionStats,
   labelDistribution,
+  stakeSpread,
+  type StakeSpread,
 } from "../chain/labs";
-import { useAdjudications, useLabMatches } from "../hooks/useLabData";
+import { formatToken, TOKEN_SYMBOL } from "../lib/format";
+import { useAdjudications, useLabMatches, useSettlementDate } from "../hooks/useLabData";
 
 /**
  * The lab.
@@ -48,6 +51,37 @@ const AMBIGUITY_CASE = { matchId: 8n, role: "holder" as const };
 const INJECTION_CASE = { matchId: 2n, role: "holder" as const };
 
 /**
+ * The stake, said as what it is.
+ *
+ * create_match takes the stake from whoever opens the match, so one figure
+ * printed as a property of the game would be wrong the first time somebody
+ * opens one with a different stake. Both halves are read off the loaded
+ * matches: the rule from the contract, the figure from the record.
+ */
+function StakeNote({ spread }: { spread: StakeSpread | null }) {
+  if (!spread) return null;
+
+  if (spread.uniform) {
+    return (
+      <>
+        The {spread.matches} {plural(spread.matches, "match", "matches")} on
+        record so far were all created with {formatToken(spread.stake)}{" "}
+        {TOKEN_SYMBOL} a side, as test matches; the stake is set per match by
+        its creator.
+      </>
+    );
+  }
+
+  return (
+    <>
+      The stake is set per match by its creator; the {spread.matches} matches on
+      record range from {formatToken(spread.min)} to {formatToken(spread.max)}{" "}
+      {TOKEN_SYMBOL} a side.
+    </>
+  );
+}
+
+/**
  * Says whether a section is a measurement or an example.
  *
  * The two are not the same kind of thing and a reader should never have to
@@ -77,8 +111,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const injection = useMemo(() => injectionStats(rows), [rows]);
   const convSummary = useMemo(() => convergenceSummary(adj.byMatch), [adj.byMatch]);
 
+  const corpusDate = useSettlementDate();
+  const stakes = useMemo(() => stakeSpread(matches), [matches]);
+
   const adjudicated = matches.filter((m) => m.adjudicated).length;
   const ambiguous = dist.find((d) => d.label === "AMBIGUOUS")?.count ?? 0;
+  const scoredRows = useMemo(() => rows.filter((r) => r.truth.verifiable), [rows]);
+  const unscoredRows = useMemo(() => rows.filter((r) => !r.truth.verifiable), [rows]);
 
   // Two statements about the grading matrix that must not be typed as facts.
   // They are true of the record today; they are printed only while they stay
@@ -119,6 +158,22 @@ export default function LabPage({ nav }: { nav: NavShell }) {
     !!designedConv &&
     adj.byMatch.every((c) => c.matchId === designedConv.matchId || roundsSpent(c) < roundsSpent(designedConv));
 
+  // Only sections that render get an entry, so no link in the list can land
+  // on nothing.
+  const contents = [
+    { id: "method", label: "METHOD" },
+    { id: "why", label: "WHY MEASURE THIS" },
+    { id: "record", label: "THE RECORD SO FAR" },
+    { id: "labels", label: "WHAT THE JURY RETURNED" },
+    { id: "grading", label: "CLAIM TYPE AGAINST LABEL" },
+    { id: "agreement", label: "WHERE THE EVIDENCE CAN CHECK THE JURY" },
+    ...(ambiguous === 0 ? [{ id: "ambiguous", label: "ONE LABEL HAS NEVER BEEN USED" }] : []),
+    { id: "sources", label: "WHAT IT TOOK TO AGREE" },
+    ...(caseSections > 0 ? [{ id: "cases", label: "MATCHES READ CLOSELY" }] : []),
+    { id: "claims", label: "EVERY CLAIM ON THE CONTRACT" },
+    { id: "limits", label: "LIMITS" },
+  ];
+
   return (
     <div className="stage stage--calm" id="top">
       <TopNav variant="post" {...nav} />
@@ -128,8 +183,9 @@ export default function LabPage({ nav }: { nav: NavShell }) {
           <p className="lab-kicker">CARNAGE LABS</p>
           <h1 className="lab-title">WHAT THE JURY RETURNED, READ FROM THE CONTRACT</h1>
           <p className="lab-lede">
-            Carnage is a negotiation game in which each side stakes 0.01 GEN and
-            anchors a natural-language claim on-chain. An AI jury running across
+            Carnage is a negotiation game in which two seats stake against
+            each other and each anchors a natural-language claim on-chain.{" "}
+            <StakeNote spread={stakes} /> An AI jury running across
             independent validators on GenLayer's Bradbury testnet labels each
             claim against the constraint that side revealed, and the labels move
             the stakes. This page is the record of what that jury returned. Match
@@ -170,16 +226,63 @@ export default function LabPage({ nav }: { nav: NavShell }) {
 
         {!loading && !error ? (
           <>
-            {/* 0. How every figure below was produced. */}
-            <section className="lab-section">
+            {/* 0. The figures, before the prose that explains them. */}
+            <section className="lab-section" id="results">
+              <h2 className="lab-h2">RESULTS</h2>
+              <ul className="lab-results">
+                <li>
+                  <strong>{rows.length}</strong> claims judged, across{" "}
+                  <strong>{adjudicated}</strong>{" "}
+                  {plural(adjudicated, "match", "matches")}.
+                </li>
+                <li>
+                  Labels returned:{" "}
+                  {dist.map((d, i) => (
+                    <span key={d.label}>
+                      {i > 0 ? ", " : ""}
+                      {d.label} <strong>{d.count}</strong>
+                    </span>
+                  ))}
+                  .
+                </li>
+                <li>
+                  <strong>{agree.agreed}</strong> of <strong>{agree.verifiable}</strong>{" "}
+                  scored claims agree with the evidence, from{" "}
+                  <strong>{agree.distinctTexts}</strong> distinct sentences.
+                </li>
+                <li>
+                  <strong>{convSummary.attempts}</strong> adjudicate transactions,{" "}
+                  <strong>{convSummary.withVerdict}</strong>{" "}
+                  {plural(convSummary.withVerdict, "verdict", "verdicts")} written,{" "}
+                  <strong>{convSummary.discarded}</strong> discarded.
+                </li>
+                {corpusDate ? (
+                  <li>
+                    Last match settled {corpusDate.day ?? "on an unread block"}, block{" "}
+                    {corpusDate.block.toLocaleString("en-US")}.
+                  </li>
+                ) : null}
+              </ul>
+              <nav className="lab-toc" aria-label="Sections">
+                {contents.map((c) => (
+                  <a key={c.id} href={`#${c.id}`}>
+                    {c.label}
+                  </a>
+                ))}
+              </nav>
+            </section>
+
+            {/* 1. How every figure above was produced. */}
+            <section className="lab-section" id="method">
               <h2 className="lab-h2">METHOD</h2>
               <ul className="lab-method">
                 <li>
                   <strong>Corpus.</strong> Every match on the deployed contract,
                   fetched by id through get_match when this page loads, from 1
                   upward until the contract reports an unknown id. Each
-                  adjudicated match contributes two claims, one per seat. Both
-                  seats stake 0.01 GEN on GenLayer's Bradbury testnet.
+                  adjudicated match contributes two claims, one per seat. The
+                  contract runs on GenLayer's Bradbury testnet.{" "}
+                  <StakeNote spread={stakes} />
                 </li>
                 <li>
                   <strong>Ground truth.</strong> Each side commits a private
@@ -219,8 +322,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </ul>
             </section>
 
-            {/* 1. Why measure this at all */}
-            <section className="lab-section">
+            {/* 2. Why measure this at all */}
+            <section className="lab-section" id="why">
               <h2 className="lab-h2">WHY MEASURE THIS</h2>
               <p className="lab-body">
                 Published work on judge architectures reports that a judge can be
@@ -240,19 +343,10 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 datasets, offline, where the text had no cost to write and the
                 verdict moved nothing.
               </p>
-              <p className="lab-body">
-                Carnage runs the same question with a stake attached. The claims
-                are written by a player whose own 0.01 GEN is on the table, the
-                jury is a set of independent validators rather than one call, and
-                the labels move the stakes. Two things appear here that a fixed
-                dataset does not produce: what somebody writes when a bluff has a
-                price, and what happens to a verdict when validators time out or
-                fail to converge.
-              </p>
             </section>
 
-            {/* 2. The corpus, before any number derived from it */}
-            <section className="lab-section">
+            {/* 3. The corpus, before any number derived from it */}
+            <section className="lab-section" id="record">
               <Tag kind="live" />
               <h2 className="lab-h2">THE RECORD SO FAR</h2>
               <p className="lab-stat">
@@ -270,8 +364,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               {coverage ? <p className="lab-note">{coverage}</p> : null}
             </section>
 
-            {/* 3. What the jury returned */}
-            <section className="lab-section">
+            {/* 4. What the jury returned */}
+            <section className="lab-section" id="labels">
               <Tag kind="live" />
               <h2 className="lab-h2">WHAT THE JURY RETURNED</h2>
               <p className="lab-body">
@@ -285,8 +379,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               <LabelBars counts={dist} total={rows.length} />
             </section>
 
-            {/* 4. The grading matrix */}
-            <section className="lab-section">
+            {/* 5. The grading matrix */}
+            <section className="lab-section" id="grading">
               <Tag kind="live" />
               <h2 className="lab-h2">CLAIM TYPE AGAINST LABEL</h2>
               <p className="lab-body">
@@ -305,6 +399,11 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 by hand.
               </p>
               <GradingMatrix cells={grid} />
+              <p className="lab-note">
+                The ALL CLAIMS row is the column totals, which equal the label
+                distribution above: every claim falls in exactly one row and one
+                column.
+              </p>
               {numbersJudgedOnTheirNumber ? (
                 <p className="lab-body">
                   Every claim that stated its own number was judged on that
@@ -322,8 +421,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               ) : null}
             </section>
 
-            {/* 5. Agreement, where there is something to agree with */}
-            <section className="lab-section">
+            {/* 6. Agreement, where there is something to agree with */}
+            <section className="lab-section" id="agreement">
               <Tag kind="live" />
               <h2 className="lab-h2">WHERE THE EVIDENCE CAN CHECK THE JURY</h2>
               <p className="lab-body">
@@ -353,9 +452,9 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </p>
             </section>
 
-            {/* 6. The one label nobody has seen. A live counter, nothing more. */}
+            {/* 7. The one label nobody has seen. A live counter, nothing more. */}
             {ambiguous === 0 ? (
-              <section className="lab-section">
+              <section className="lab-section" id="ambiguous">
                 <Tag kind="live" />
                 <h2 className="lab-h2">ONE LABEL HAS NEVER BEEN USED</h2>
                 <p className="lab-body">
@@ -374,7 +473,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </section>
             ) : null}
 
-            {/* 7. Consensus */}
+            {/* 8. Consensus */}
             <section className="lab-section" id="sources">
               <Tag kind="live" />
               <h2 className="lab-h2">WHAT IT TOOK TO AGREE</h2>
@@ -447,7 +546,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             {/* Case studies. Fixed examples, marked as such, kept apart from
                 the measurements above so neither can be mistaken for the other. */}
             {caseSections > 0 ? (
-              <section className="lab-section">
+              <section className="lab-section" id="cases">
                 <h2 className="lab-h2">MATCHES READ CLOSELY</h2>
                 <p className="lab-body">
                   Everything above is a count over the whole corpus. What follows
@@ -555,8 +654,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </section>
             ) : null}
 
-            {/* 8. The whole record, live again */}
-            <section className="lab-section">
+            {/* 9. The whole record, live again */}
+            <section className="lab-section" id="claims">
               <Tag kind="live" />
               <h2 className="lab-h2">EVERY CLAIM ON THE CONTRACT</h2>
               <p className="lab-body">
@@ -578,11 +677,15 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 no digits at all, so the reason printed against it is that there
                 is no number to check.
               </p>
-              <ClaimTable rows={rows} lookup={lookup} />
+              <h3 className="lab-h3">SCORED ({scoredRows.length})</h3>
+              <ClaimTable rows={scoredRows} lookup={lookup} legend />
+
+              <h3 className="lab-h3">NOT SCORED ({unscoredRows.length})</h3>
+              <ClaimTable rows={unscoredRows} lookup={lookup} />
             </section>
 
-            {/* 9. What the figures above cannot carry. */}
-            <section className="lab-section">
+            {/* 10. What the figures above cannot carry. */}
+            <section className="lab-section" id="limits">
               <h2 className="lab-h2">LIMITS</h2>
               <ul className="lab-method">
                 <li>

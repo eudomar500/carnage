@@ -56,11 +56,11 @@ export default function RoundDrill({ match }: { match: MatchConvergence }) {
                   <p className="lab-drill-head">
                     <span className={`lab-drill-tag${r.applied ? "" : " lab-drill-tag--dropped"}`}>
                       {r.applied ? "VERDICT WRITTEN" : "THROWN AWAY"}
-                    </span>
-                    attempt {i + 1}, <code>{r.txId.slice(0, 10)}...{r.txId.slice(-8)}</code>
+                    </span>{" "}
+                    attempt {i + 1}, <code>tx {r.txId.slice(0, 10)}...{r.txId.slice(-8)}</code>
                     {url ? (
                       <a className="inflight-link" href={url} target="_blank" rel="noreferrer">
-                        CHECK THE EXPLORER
+                        OPEN IN THE EXPLORER
                       </a>
                     ) : null}
                   </p>

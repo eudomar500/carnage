@@ -6,6 +6,7 @@ import {
   claimRows,
   convergenceOf,
   convergenceSummary,
+  stakeSpread,
   gradingMatrix,
   groundTruth,
   injectionPattern,
@@ -267,6 +268,37 @@ describe("applied versus discarded", () => {
 
   it("treats a cancelled transaction as discarded whatever the result says", () => {
     expect(isApplied("CANCELED", "AGREE")).toBe(false);
+  });
+});
+
+describe("stake across the record", () => {
+  const staked = (id: bigint, stake: bigint): MatchState => ({
+    ...base,
+    match_id: id,
+    stake_amount: stake,
+  });
+
+  it("reports one figure when every match was opened with the same stake", () => {
+    const spread = stakeSpread([staked(1n, 10n ** 16n), staked(2n, 10n ** 16n)]);
+    expect(spread).toEqual({ uniform: true, matches: 2, stake: 10n ** 16n });
+  });
+
+  it("reports the range when the stakes differ", () => {
+    const spread = stakeSpread([
+      staked(1n, 10n ** 16n),
+      staked(2n, 5n * 10n ** 17n),
+      staked(3n, 2n * 10n ** 16n),
+    ]);
+    expect(spread).toEqual({
+      uniform: false,
+      matches: 3,
+      min: 10n ** 16n,
+      max: 5n * 10n ** 17n,
+    });
+  });
+
+  it("has nothing to say about an empty record", () => {
+    expect(stakeSpread([])).toBeNull();
   });
 });
 

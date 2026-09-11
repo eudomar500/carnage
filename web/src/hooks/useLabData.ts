@@ -388,6 +388,74 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
   return feed ?? { ...EMPTY_FEED, ...feedFrom(indexedAttempts()), scanning: enabled };
 }
 
+/* ---------- corpus date --------------------------------------------------- */
+
+/** The settlement the committed index saw last, by block. */
+export function latestSettlement(): { hash: string; block: number } | null {
+  let best: { hash: string; block: number } | null = null;
+  for (const e of historyByMethod("settle")) {
+    if (!best || e.block > best.block) best = { hash: e.hash, block: e.block };
+  }
+  return best;
+}
+
+export type CorpusDate = { block: number; day: string | null };
+
+const DATE_KEY = (hash: string) => `carnage:settled:${hash}`;
+
+function cachedDay(hash: string | undefined): string | null {
+  if (!hash) return null;
+  try {
+    return sessionStorage.getItem(DATE_KEY(hash));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When the last settlement in the index landed.
+ *
+ * The index records the block a transaction landed in and never its time, so
+ * the date costs one read. It is cached for the session because a refresh
+ * should not spend another, and the block number prints either way, so a
+ * failed read costs the date and nothing else.
+ *
+ * The live tail decodes adjudicate calls only, which is all the convergence
+ * figures need, so a settlement after the snapshot block is not visible here
+ * until the index is regenerated.
+ */
+export function useSettlementDate(): CorpusDate | null {
+  const latest = latestSettlement();
+  const hash = latest?.hash;
+  const [day, setDay] = useState<string | null>(() => cachedDay(hash));
+
+  useEffect(() => {
+    if (!hash || day) return;
+    const mine = { cancelled: false };
+    void (async () => {
+      try {
+        const tx: any = await (readClient() as any).getTransaction({ hash });
+        const seconds = Number(tx?.createdTimestamp ?? 0);
+        if (!seconds || mine.cancelled) return;
+        const iso = new Date(seconds * 1000).toISOString().slice(0, 10);
+        try {
+          sessionStorage.setItem(DATE_KEY(hash), iso);
+        } catch {
+          // A private window is not a reason to drop the date on this visit.
+        }
+        setDay(iso);
+      } catch {
+        // The block number is already on the page; no error is worth showing.
+      }
+    })();
+    return () => {
+      mine.cancelled = true;
+    };
+  }, [hash, day]);
+
+  return latest ? { block: latest.block, day } : null;
+}
+
 /* ---------- per round drill-down ----------------------------------------- */
 
 const LABEL_WORDS = ["TRUE", "FALSE", "MISLEADING", "AMBIGUOUS", "UNSUPPORTED"] as const;
