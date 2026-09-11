@@ -127,8 +127,15 @@ const RATE_LIMIT_CODES = new Set([-32005, 429]);
 
 const CANCEL_TEXT = /user rejected|user denied|request rejected|rejected the request/i;
 const RATE_LIMIT_TEXT = /node at capacity|rate ?limit|too many requests|\b429\b/i;
+/*
+ * The last three alternatives are a node that answered with something other
+ * than JSON-RPC. A gateway or a proxy in front of the RPC returns an HTML
+ * error page, the client fails to parse it, and the result used to classify as
+ * "unknown" and reach the reader as "An unknown RPC error occurred". It is a
+ * transport failure like any other, and the caller can retry it.
+ */
 const NETWORK_TEXT =
-  /timeout|timed out|exceeded|network|fetch failed|failed to fetch|socket|econn|aborted|502|503|504/i;
+  /timeout|timed out|exceeded|network|fetch failed|failed to fetch|socket|econn|aborted|502|503|504|not valid json|unexpected token|<!doctype/i;
 
 export function isRateLimited(err: unknown): boolean {
   const code = codeOf(err);

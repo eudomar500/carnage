@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getMatchView, isUnknownMatch, type MatchState, type MatchView } from "../chain/contract";
-import { classifyFailure } from "../chain/errors";
+import {
+  getMatchView,
+  isResolved,
+  isUnknownMatch,
+  type MatchState,
+  type MatchView,
+} from "../chain/contract";
+import { classifyFailure, type FailureKind } from "../chain/errors";
 
 const POLL_MS = 12_000;
 const MAX_POLL_MS = 60_000;
@@ -11,6 +17,8 @@ export type MatchFeed = {
   notFound: boolean;
   /** Fatal: there is nothing to show at all. */
   error: string | null;
+  /** What kind of failure `error` describes, so the screen can offer a retry. */
+  errorKind: FailureKind | null;
   /** Transient: the last good state is still on screen but reads are failing. */
   degraded: string | null;
   loading: boolean;
@@ -32,10 +40,19 @@ export type MatchFeed = {
  *
  * A null id is the start screen: no match is selected, so there is nothing to
  * read and the hook stays idle rather than burning a poll on a placeholder.
+ *
+ * The poll stops when the match reaches a terminal state: settled, resolved as
+ * a no-reveal, resolved as inconclusive, or refunded before the lock. Nothing
+ * the contract can do afterwards changes what get_match returns, and each read
+ * is a gen_call the node executes in the GenVM, so a finished match left open
+ * in a tab was costing a run of the contract every twelve seconds for nothing.
+ * A manual refresh and a reload each still read once, and every other state
+ * polls as before.
  */
 export function useMatch(matchId: number | null): MatchFeed {
   const [view, setView] = useState<MatchView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<FailureKind | null>(null);
   const [degraded, setDegraded] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(matchId !== null);
@@ -75,6 +92,7 @@ export function useMatch(matchId: number | null): MatchFeed {
       hasView.current = true;
       setView(next);
       setError(null);
+      setErrorKind(null);
       setDegraded(null);
       setNotFound(false);
       setTick((t) => t + 1);
@@ -87,6 +105,7 @@ export function useMatch(matchId: number | null): MatchFeed {
         setNotFound(true);
         setView(null);
         setError(null);
+        setErrorKind(null);
         setDegraded(null);
         return null;
       }
@@ -94,8 +113,12 @@ export function useMatch(matchId: number | null): MatchFeed {
       // A transient read failure must not blank a page that already has state.
       // Before this, one rate-limited poll dropped the whole match view and
       // replaced it with a read error.
-      if (hasView.current) setDegraded(failure.message);
-      else setError(failure.message);
+      if (hasView.current) {
+        setDegraded(failure.message);
+      } else {
+        setError(failure.message);
+        setErrorKind(failure.kind);
+      }
       if (failure.kind === "rate-limited" || failure.kind === "network") {
         delay.current = Math.min(delay.current * 2, MAX_POLL_MS);
       }
@@ -139,8 +162,11 @@ export function useMatch(matchId: number | null): MatchFeed {
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     const loop = async () => {
-      await refresh();
+      const state = await refresh();
       if (mine.cancelled) return;
+      // Terminal is terminal. Anything that happens next, a claim included,
+      // comes through refresh() from the panel that sent it.
+      if (state && isResolved(state)) return;
       timer = setTimeout(loop, delay.current);
     };
     void loop();
@@ -152,8 +178,17 @@ export function useMatch(matchId: number | null): MatchFeed {
   }, [matchId, refresh]);
 
   if (matchId === null) {
-    return { view: null, notFound: false, error: null, degraded: null, loading: false, tick: 0, refresh };
+    return {
+      view: null,
+      notFound: false,
+      error: null,
+      errorKind: null,
+      degraded: null,
+      loading: false,
+      tick: 0,
+      refresh,
+    };
   }
 
-  return { view, notFound, error, degraded, loading, tick, refresh };
+  return { view, notFound, error, errorKind, degraded, loading, tick, refresh };
 }

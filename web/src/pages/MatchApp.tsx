@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import TopNav, { type NavShell } from "../components/TopNav";
-import JudgeTrex from "../components/JudgeTrex";
+import JudgeTrex, { type BiteSide } from "../components/JudgeTrex";
 import AgentCard from "../components/AgentCard";
 import StepDiagram from "../components/StepDiagram";
 import VerdictBar from "../components/VerdictBar";
@@ -13,8 +13,8 @@ import { useMatch } from "../hooks/useMatch";
 import { claimGate, isDishonest, isResolved } from "../chain/contract";
 import { noteObserved } from "../chain/grace";
 import { reconcile } from "../chain/journal";
-import { seatOf } from "../chain/roles";
-import { derivePhase, isStrike, judgeMood } from "../chain/phase";
+import { seatOf, type Role } from "../chain/roles";
+import { derivePhase, isStrike, judgeMood, type JudgeMood } from "../chain/phase";
 import { CARNAGE_ADDRESS } from "../chain/client";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
 import { PREVIEWS, type PreviewSelection } from "../dev/preview";
@@ -35,6 +35,41 @@ export type MatchAppProps = {
   onCreated: (matchId: bigint) => void;
 };
 
+/*
+ * One bite, end to end: turn toward the card, jaws open, the card travels into
+ * the mouth and holds there, jaws close with a jerk, a beat, and the card is
+ * back chewed. Kept under two seconds a card so a both-adverse settlement does
+ * not hold the screen. The same figures drive --bite-ms in styles.css.
+ */
+const BITE_MS = 1210;
+const BITE_GAP_MS = 120;
+
+/*
+ * Development-only replay switch.
+ *
+ * With ?bite=1 the first sight of a settled match fires the sequence, so the
+ * choreography can be worked on without waiting for a settlement to land. It
+ * reads the URL and nothing else: no journal write, no cache entry, no state
+ * beyond the reaction a mood transition would have produced anyway.
+ *
+ * import.meta.env.DEV is a literal at build time, so the whole expression
+ * folds to false in a production build and the URL read is dropped with it.
+ * Written as one constant rather than an effect of its own so that nothing,
+ * not even an empty hook, survives the fold.
+ */
+const BITE_PREVIEW =
+  import.meta.env.DEV &&
+  typeof location !== "undefined" &&
+  new URLSearchParams(location.search).get("bite") === "1";
+
+/** The seats a settle mood says were slashed, in the order the cards sit in. */
+function bittenSeats(mood: JudgeMood): Role[] {
+  const seats: Role[] = [];
+  if (mood === "strike-holder" || mood === "strike-both") seats.push("holder");
+  if (mood === "strike-buyer" || mood === "strike-both") seats.push("buyer");
+  return seats;
+}
+
 /**
  * The functional half of Carnage: create a match, play a seat, watch one.
  *
@@ -51,35 +86,86 @@ export default function MatchApp({
   onEntry,
   onCreated,
 }: MatchAppProps) {
-  const { view, notFound, error, degraded, loading, tick, refresh } = useMatch(matchId);
+  const { view, notFound, error, errorKind, degraded, loading, tick, refresh } = useMatch(matchId);
 
   const effective = preview ? preview.scenario.state : view?.accepted ?? null;
   const phase = useMemo(() => (effective ? derivePhase(effective) : null), [effective]);
   const mood = phase ? judgeMood(phase) : "calm";
 
-  // A settle that lands while the page is open plays the strike once: the
-  // judge lunges, the screen shakes and flashes, the slashed card cracks.
+  // A settle that lands while the page is open plays the reaction once: the
+  // screen shakes and flashes, and the judge eats the card of each side that
+  // drew an adverse label.
   const [strikeKey, setStrikeKey] = useState(0);
   const [reacting, setReacting] = useState(false);
   const reactTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fireReaction = useCallback(() => {
-    setStrikeKey((k) => k + 1);
-    setReacting(true);
-    if (reactTimer.current) clearTimeout(reactTimer.current);
-    reactTimer.current = setTimeout(() => setReacting(false), 1500);
+  // The seat in the jaws right now, and the seats still owed a bite. A card is
+  // drawn chewed once it is in neither: on a reload of a settled match both are
+  // empty from the start, so the chewed state is there without the sequence.
+  const [biting, setBiting] = useState<BiteSide>(null);
+  const [queued, setQueued] = useState<Role[]>([]);
+  const biteTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearBiteTimers = useCallback(() => {
+    for (const t of biteTimers.current) clearTimeout(t);
+    biteTimers.current = [];
   }, []);
+
+  const fireReaction = useCallback(
+    (seats: Role[]) => {
+      setStrikeKey((k) => k + 1);
+      setReacting(true);
+      if (reactTimer.current) clearTimeout(reactTimer.current);
+      reactTimer.current = setTimeout(() => setReacting(false), 1500);
+
+      clearBiteTimers();
+      // Reduced motion gets the outcome without the choreography: no bite, and
+      // the chewed cards are already on screen because nothing is queued.
+      const reduced =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (reduced || seats.length === 0) {
+        setQueued([]);
+        setBiting(null);
+        return;
+      }
+
+      setQueued(seats);
+      let at = 0;
+      for (const seat of seats) {
+        const start = at;
+        biteTimers.current.push(setTimeout(() => setBiting(seat), start));
+        biteTimers.current.push(
+          setTimeout(() => {
+            setBiting(null);
+            setQueued((rest) => rest.filter((s) => s !== seat));
+          }, start + BITE_MS),
+        );
+        at += BITE_MS + BITE_GAP_MS;
+      }
+    },
+    [clearBiteTimers],
+  );
 
   const lastMood = useRef<string | null>(null);
   useEffect(() => {
     if (!phase) return;
     const previous = lastMood.current;
     lastMood.current = mood;
-    if (previous === null || previous === mood) return;
+    // First sight of a match is not a transition, so it plays nothing. The dev
+    // switch is the one exception, and it still only gets the first sight.
+    if (previous === null && !BITE_PREVIEW) return;
+    if (previous === mood) return;
     if (!isStrike(mood)) return;
-    fireReaction();
+    fireReaction(bittenSeats(mood));
   }, [mood, phase, tick, fireReaction]);
-  useEffect(() => () => { if (reactTimer.current) clearTimeout(reactTimer.current); }, []);
+  useEffect(
+    () => () => {
+      if (reactTimer.current) clearTimeout(reactTimer.current);
+      clearBiteTimers();
+    },
+    [clearBiteTimers],
+  );
 
   const wallet = nav.wallet;
 
@@ -121,7 +207,9 @@ export default function MatchApp({
           <span className="preview-tag">PREVIEW: SYNTHETIC STATE, NOT ON-CHAIN</span>
           <span className="preview-label">{preview.scenario.label}</span>
           <span className="preview-expect">expect: {preview.scenario.expect}</span>
-          <button className="preview-replay" onClick={fireReaction}>REPLAY STRIKE</button>
+          <button className="preview-replay" onClick={() => fireReaction(bittenSeats(mood))}>
+            REPLAY STRIKE
+          </button>
           <span className="preview-links">
             {Object.keys(PREVIEWS).map((k) => (
               <a key={k} href={`?preview=${k}`} className={k === preview.key ? "on" : ""}>{k}</a>
@@ -161,10 +249,34 @@ export default function MatchApp({
   }
 
   if (!m || !phase) {
+    // A node that timed out, refused or answered with something that is not
+    // JSON-RPC says nothing about the match, so the useful offer is another
+    // read. A revert is the contract answering, and its own words are what the
+    // reader needs instead.
+    const unreachable = errorKind === "network" || errorKind === "rate-limited";
     return shell(
       <div className="app-boot app-boot--err">
         <p>COULD NOT READ MATCH {matchId}</p>
-        <p className="boot-detail">{error}</p>
+        {unreachable ? (
+          <>
+            <p className="boot-detail">
+              GenLayer Bradbury is not answering right now. The match is
+              unaffected and the read can be tried again.
+            </p>
+            <button
+              type="button"
+              className="linkish"
+              disabled={loading}
+              onClick={() => {
+                void refresh();
+              }}
+            >
+              try the read again
+            </button>
+          </>
+        ) : (
+          <p className="boot-detail">{error}</p>
+        )}
         <button type="button" className="linkish" onClick={onEntry}>
           open a different match
         </button>
@@ -175,8 +287,12 @@ export default function MatchApp({
   const gate = claimGate(m, wallet);
   const pool = m.stake_amount * 2n;
   const stillLocked = m.holder_claimable + m.buyer_claimable + m.sink_claimable;
-  const holderCracked = m.settled && isDishonest(m.holder_label);
-  const buyerCracked = m.settled && isDishonest(m.buyer_label);
+  // A card is chewed once settlement slashed it and the jaws have let it go.
+  // While it is queued or in the mouth it still looks whole, because it has
+  // not been eaten yet.
+  const inJaws = (seat: Role) => biting === seat || queued.includes(seat);
+  const holderCracked = m.settled && isDishonest(m.holder_label) && !inJaws("holder");
+  const buyerCracked = m.settled && isDishonest(m.buyer_label) && !inJaws("buyer");
 
   return shell(
     <>
@@ -200,7 +316,7 @@ export default function MatchApp({
           </div>
         </div>
 
-        <JudgeTrex mood={mood} strikeKey={strikeKey} />
+        <JudgeTrex mood={mood} strikeKey={strikeKey} bite={biting} />
 
         <ol className="rail rail--left">
           {LEFT_RAIL.map((s) => <li key={s}>{s}</li>)}
@@ -219,6 +335,7 @@ export default function MatchApp({
             stake={m.stake_amount}
             label={m.holder_label}
             cracked={holderCracked}
+            eating={biting === "holder"}
           />
         </div>
 
@@ -236,6 +353,7 @@ export default function MatchApp({
             stake={m.stake_amount}
             label={m.buyer_label}
             cracked={buyerCracked}
+            eating={biting === "buyer"}
           />
         </div>
 

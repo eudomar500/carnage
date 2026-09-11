@@ -372,6 +372,22 @@ export async function scanMatchTransactions(
     indexResolved: indexAnswersMatch(required, indexed),
   };
 
+  /*
+   * Nothing to ask the chain for.
+   *
+   * Every required method is in the index with a terminal status, so no later
+   * block can add to this answer or change it. Falling through would spend a
+   * getBlockNumber and a batch of getLogs to rediscover that, which on this
+   * node is the slowest thing the match route does: the stillNeeded check that
+   * would stop the walk only runs after the first window has been fetched and
+   * its transactions read.
+   *
+   * Stale entries are the exception and still fall through. Their status was
+   * not final when the snapshot ran, and the loop below is the only place that
+   * refreshes it, so a match carrying one is worth the reads.
+   */
+  if (base.indexResolved && stale.length === 0) return base;
+
   const event = newTransactionEvent();
   const consensus = CHAIN.consensusMainContract?.address as `0x${string}` | undefined;
   if (!event || !consensus) {

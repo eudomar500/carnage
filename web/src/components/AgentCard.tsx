@@ -17,8 +17,10 @@ export type AgentCardProps = {
   constraint: bigint;
   stake: bigint;
   label: Label;
-  /** True once settlement slashed this side; the frame cracks. */
+  /** True once settlement slashed this side; the frame cracks and stays chewed. */
   cracked: boolean;
+  /** True only while the jaws are closing on this card. */
+  eating?: boolean;
 };
 
 export default function AgentCard(p: AgentCardProps) {
@@ -27,7 +29,11 @@ export default function AgentCard(p: AgentCardProps) {
 
   return (
     <section
-      className={`card card--${isHolder ? "holder" : "buyer"}${p.cracked ? " card--cracked" : ""}`}
+      className={
+        `card card--${isHolder ? "holder" : "buyer"}` +
+        (p.cracked ? " card--cracked" : "") +
+        (p.eating ? " card--eating" : "")
+      }
     >
       <div className="card-corner card-corner--tl" />
       <div className="card-corner card-corner--tr" />
