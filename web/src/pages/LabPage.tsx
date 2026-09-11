@@ -14,8 +14,7 @@ import {
   injectionStats,
   labelDistribution,
 } from "../chain/labs";
-import { SCAN_WINDOWS, useAdjudications, useLabMatches } from "../hooks/useLabData";
-import { WINDOW } from "../chain/txlog";
+import { useAdjudications, useLabMatches } from "../hooks/useLabData";
 
 /**
  * The lab.
@@ -30,9 +29,6 @@ import { WINDOW } from "../chain/txlog";
  * fix is to say what is happening rather than to show a placeholder that
  * looks like a result.
  */
-
-/** Blocks the second tier can see. Printed rather than implied. */
-const SCAN_BLOCKS = (SCAN_WINDOWS * Number(WINDOW)).toLocaleString("en-US");
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
@@ -81,7 +77,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const lookup: VerdictLookup = {
     verdicts: adj.verdicts,
     scanning: adj.scanning || !adj.done,
-    missingNote: `no adjudicate transaction in the last ${SCAN_BLOCKS} blocks, which is as far back as this page reads`,
+    missingNote: `no adjudicate transaction found for this match, in the committed index through block ${adj.snapshotBlock.toLocaleString("en-US")} or in the live blocks after it`,
   };
 
   // The designed ambiguity experiment lives on whichever match carries it, so
@@ -318,18 +314,27 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 </>
               ) : null}
 
-              {adj.scanning ? (
+              {adj.scanning && adj.total > 0 ? (
                 <p className="lab-note">
-                  Reading the consensus log, window {adj.progress} of {SCAN_WINDOWS}. This
-                  walks the chain backwards and takes a few seconds.
+                  Reading the blocks after the index, window {adj.progress} of{" "}
+                  {adj.total}.
                 </p>
               ) : null}
               {adj.degraded ? <p className="act-warn">{adj.degraded}</p> : null}
               {adj.done ? (
                 <p className="lab-note">
-                  The walk covers the last {SCAN_BLOCKS} blocks. A match older than
-                  that has no row here, which is a limit of the walk and not a
-                  match that was never judged.
+                  Two sources, both on-chain. Every transaction through block{" "}
+                  {adj.snapshotBlock.toLocaleString("en-US")} is in an index
+                  committed to this repository, which any reader can regenerate
+                  from the contract with the snapshot script. Blocks after it
+                  were scanned live on this visit
+                  {adj.total > 0
+                    ? `, ${adj.total} ${plural(adj.total, "window", "windows")} of them`
+                    : ""}
+                  .
+                  {adj.tailCapped
+                    ? " The chain has moved further than that scan reaches, so a match played since then would not appear here yet."
+                    : ""}
                 </p>
               ) : null}
             </section>

@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { CARNAGE_ADDRESS, CHAIN, readClient } from "../chain/client";
 import { coverageNote, discoverAllMatches, type Discovery } from "../chain/discovery";
 import type { MatchState } from "../chain/contract";
-import { decodeCall, newTransactionEvent, pool, WINDOW } from "../chain/txlog";
+import {
+  decodeCall,
+  MAX_WINDOWS,
+  newTransactionEvent,
+  pool,
+  tailWindows,
+} from "../chain/txlog";
+import { historyByMethod, SNAPSHOT_BLOCK } from "../chain/history";
 import {
   convergenceOf,
   isApplied,
@@ -23,19 +30,27 @@ import {
  * records that a match was adjudicated, never which transaction did it or how
  * many attempts it took, and the contract cannot: a discarded round leaves no
  * on-chain trace. The only place that history exists is the consensus
- * contract's transaction index, which means a log scan plus a read per
- * transaction. That is slower, so it runs behind the first tier and fills the
- * page in as it goes instead of blocking it.
+ * contract's transaction log.
+ *
+ * That log is read from two sources, for the reason set out in txlog.ts: the
+ * committed index answers everything through its snapshot block, and only the
+ * blocks after it are scanned live. Without the index this tier would have to
+ * walk the contract's whole history on every visit, which grows by about ten
+ * windows a day and would drop the oldest matches off the page within days.
  */
 
 /**
- * How far back the second tier looks.
+ * Ceiling on the live tail, shared with txlog.ts.
  *
- * Same bound txlog.ts settled on. It covers the whole record today, and it is
- * reported rather than hidden so a match that ages out of range reads as out
- * of range instead of as a match that was never adjudicated.
+ * The tail is only what the committed index does not already cover, so on a
+ * current index this is never reached. It binds when the index has been left
+ * to drift for several days, which is the expected state once the index is
+ * frozen. That costs nothing already in the index: every adjudication below
+ * the snapshot is still present and every figure derived from them still
+ * stands. What it costs is visibility of matches played after the tail's
+ * reach, so the page says that rather than calling the numbers degraded.
  */
-export const SCAN_WINDOWS = 40;
+export const SCAN_WINDOWS = MAX_WINDOWS;
 
 /**
  * Log queries issued at once, and transaction reads in flight within each.
@@ -132,11 +147,17 @@ export type AdjudicationFeed = {
    */
   verdicts: Map<string, Attempt>;
   scanning: boolean;
-  /** Windows read so far, out of SCAN_WINDOWS. */
+  /** Live-tail windows read so far. */
   progress: number;
+  /** Live-tail windows this scan will read in total. */
+  total: number;
   degraded: string | null;
   /** True once the walk has finished, cleanly or not. */
   done: boolean;
+  /** The block the committed index answers through. */
+  snapshotBlock: number;
+  /** True when the live tail was wider than the budget could cover. */
+  tailCapped: boolean;
 };
 
 const EMPTY_FEED: AdjudicationFeed = {
@@ -144,9 +165,37 @@ const EMPTY_FEED: AdjudicationFeed = {
   verdicts: new Map(),
   scanning: false,
   progress: 0,
+  total: 0,
   degraded: null,
   done: false,
+  snapshotBlock: SNAPSHOT_BLOCK,
+  tailCapped: false,
 };
+
+/**
+ * Every adjudicate transaction the committed index holds.
+ *
+ * Complete through the snapshot block by construction, including the rounds
+ * consensus discarded: the index records what the log said, not what contract
+ * state kept.
+ */
+export function indexedAttempts(): Map<string, Attempt[]> {
+  const out = new Map<string, Attempt[]>();
+  for (const e of historyByMethod("adjudicate")) {
+    if (!e.matchId) continue;
+    const list = out.get(e.matchId) ?? [];
+    list.push({
+      txId: e.hash,
+      block: e.block,
+      statusName: e.status,
+      resultName: e.result,
+      rounds: e.rounds,
+      applied: isApplied(e.status, e.result),
+    });
+    out.set(e.matchId, list);
+  }
+  return out;
+}
 
 /** The attempt whose verdict reached contract state, if any did. */
 function appliedAttempt(attempts: Attempt[]): Attempt | undefined {
@@ -167,12 +216,12 @@ function feedFrom(found: Map<string, Attempt[]>): Pick<AdjudicationFeed, "byMatc
 }
 
 /**
- * Walks the consensus log for adjudicate transactions, newest window first.
+ * Every adjudicate transaction, from the index and then from the live tail.
  *
- * Starts on its own as soon as `enabled` goes true, which the page does once
- * the matches are in. It publishes after every batch of windows rather than at
- * the end, so each match's transaction hash appears as the walk reaches it
- * instead of everything arriving at once several seconds later.
+ * The index is loaded synchronously, so the page has the whole historical
+ * record before a single request goes out. Starts on its own as soon as
+ * `enabled` goes true, and publishes after every batch of tail windows rather
+ * than at the end.
  */
 export function useAdjudications(enabled: boolean): AdjudicationFeed {
   const [feed, setFeed] = useState<AdjudicationFeed | null>(null);
@@ -196,23 +245,22 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
       }
 
       const client = readClient() as any;
-      const found = new Map<string, Attempt[]>();
+      const found = indexedAttempts();
       let degraded: string | null = null;
 
-      let latest = 0n;
+      let tail: { from: bigint; to: bigint }[] = [];
+      let capped = false;
 
-      // Declared before `latest` is read, called only after it is set.
+      // Declared before `tail` is filled, called only after it is.
       const readWindow = async (i: number) => {
-        const to = latest - BigInt(i) * WINDOW;
-        if (to <= 0n) return [];
-        const from = to - WINDOW + 1n > 0n ? to - WINDOW + 1n : 0n;
+        const w = tail[i];
         const logs: any[] = await retryRead(() =>
           client.getLogs({
             address: consensus,
             event,
             args: { recipient: CARNAGE_ADDRESS },
-            fromBlock: from,
-            toBlock: to,
+            fromBlock: w.from,
+            toBlock: w.to,
           }),
         );
         return pool(logs, READ_CONCURRENCY, async (log) => {
@@ -238,21 +286,39 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
       };
 
       try {
-        latest = await retryRead(() => client.getBlockNumber());
+        const latest: bigint = await retryRead(() => client.getBlockNumber());
+        const planned = tailWindows(latest, SNAPSHOT_BLOCK, SCAN_WINDOWS);
+        tail = planned.windows;
+        capped = planned.capped;
       } catch {
+        // The index still stands on its own; only the tail is unread.
         setFeed({
           ...EMPTY_FEED,
-          degraded: "could not reach the transaction index",
+          ...feedFrom(found),
+          degraded: "could not reach the transaction log, showing the committed index only",
           done: true,
         });
         return;
       }
 
+      if (!tail.length) {
+        setFeed({
+          ...EMPTY_FEED,
+          ...feedFrom(found),
+          progress: 0,
+          total: 0,
+          degraded,
+          done: true,
+          tailCapped: capped,
+        });
+        return;
+      }
+
       let scanned = 0;
-      for (let base = 0; base < SCAN_WINDOWS; base += LOG_BATCH) {
+      for (let base = 0; base < tail.length; base += LOG_BATCH) {
         if (mine.cancelled) return;
         const batch: number[] = [];
-        for (let k = 0; k < LOG_BATCH && base + k < SCAN_WINDOWS; k++) batch.push(base + k);
+        for (let k = 0; k < LOG_BATCH && base + k < tail.length; k++) batch.push(base + k);
 
         try {
           const windows = await Promise.all(batch.map(readWindow));
@@ -269,24 +335,45 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
             scanned += 1;
           }
         } catch {
-          degraded = "the scan stopped early, so some transactions may be missing";
+          degraded = "the live scan stopped early, so recent transactions may be missing";
           if (mine.cancelled) return;
-          setFeed({ ...feedFrom(found), scanning: false, progress: scanned, degraded, done: true });
+          setFeed({
+            ...feedFrom(found),
+            scanning: false,
+            progress: scanned,
+            total: tail.length,
+            degraded,
+            done: true,
+            snapshotBlock: SNAPSHOT_BLOCK,
+            tailCapped: capped,
+          });
           return;
         }
 
         if (mine.cancelled) return;
         setFeed({
           ...feedFrom(found),
-          scanning: scanned < SCAN_WINDOWS,
+          scanning: scanned < tail.length,
           progress: scanned,
+          total: tail.length,
           degraded,
           done: false,
+          snapshotBlock: SNAPSHOT_BLOCK,
+          tailCapped: capped,
         });
       }
 
       if (mine.cancelled) return;
-      setFeed({ ...feedFrom(found), scanning: false, progress: scanned, degraded, done: true });
+      setFeed({
+        ...feedFrom(found),
+        scanning: false,
+        progress: scanned,
+        total: tail.length,
+        degraded,
+        done: true,
+        snapshotBlock: SNAPSHOT_BLOCK,
+        tailCapped: capped,
+      });
     })();
 
     return () => {
@@ -294,10 +381,11 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
     };
   }, [enabled]);
 
-  // Null means the walk has not published anything yet. Whether that counts as
-  // scanning is decided by `enabled` alone, so it is derived here rather than
-  // written from the effect, which would cost a render that only says "working".
-  return feed ?? { ...EMPTY_FEED, scanning: enabled };
+  // Null means the walk has not published anything yet. The index is already
+  // known at that point, so it is shown immediately and only the tail is
+  // reported as pending. Derived here rather than written from the effect,
+  // which would cost a render that only says "working".
+  return feed ?? { ...EMPTY_FEED, ...feedFrom(indexedAttempts()), scanning: enabled };
 }
 
 /* ---------- per round drill-down ----------------------------------------- */

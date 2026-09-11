@@ -2,9 +2,31 @@ import { abi } from "genlayer-js";
 import { fromRlp, hexToBytes, parseAbiItem, type AbiEvent } from "viem";
 import { CARNAGE_ADDRESS, CHAIN, readClient } from "./client";
 import { isRateLimited } from "./errors";
+import {
+  historyFor,
+  isTerminalStatus,
+  SNAPSHOT_BLOCK,
+  staleEntries,
+  type HistoryEntry,
+} from "./history";
 
 /**
  * Recovers the real transaction hash behind each step of a match.
+ *
+ * Two sources, and this is the one place the split is explained. Everything up
+ * to the index's snapshot block is answered from src/chain/history.json, a
+ * file built by scripts/snapshot.mjs and committed. Everything after it is
+ * scanned live from the consensus log.
+ *
+ * The index is not an optimisation, it is the only thing that keeps old
+ * matches reachable. Bradbury refuses any eth_getLogs range wider than 10000
+ * blocks and produces a block every 0.76 s, so the contract's history costs
+ * one window per 10000 blocks and grows by about ten windows a day forever.
+ * Carnage ships as a static build with no server to keep an index warm and no
+ * way to page a visitor's first load, so a scan that walks the whole chain
+ * would pass any sane page budget within weeks and match 1 would simply stop
+ * resolving. Committing the history fixes the cost of the past at zero and
+ * leaves only the tail to read.
  *
  * get_match returns state, not history, so the hashes have to come from
  * somewhere else. They are not contract events: a GenVM `gl.Event` is part of
@@ -54,14 +76,34 @@ export type MatchTx = {
 export type ScanOutcome = {
   /** Newest first, at most one entry per method except `claim`. */
   txs: MatchTx[];
-  /** How many windows were actually read. */
+  /** How many live-tail windows were actually read. */
   windowsScanned: number;
-  /** Total blocks covered by those windows. */
+  /** Blocks of the live tail those windows covered. */
   blocksScanned: number;
   /** True when the budget ran out before every required method was found. */
   exhausted: boolean;
   /** Set when the scan stopped early for a transport reason. */
   degraded: string | null;
+  /** The block the committed index answers through. */
+  snapshotBlock: number;
+  /**
+   * True when the live tail was wider than MAX_WINDOWS could cover, so the
+   * blocks immediately above the snapshot were never read.
+   *
+   * A fact about the scan, not a verdict on the result. Whether it cost this
+   * match anything is `indexResolved`.
+   */
+  tailCapped: boolean;
+  /**
+   * Every required method was answered from the committed index, with a
+   * terminal status.
+   *
+   * When this holds the result is complete and a capped tail took nothing
+   * away: the match finished below the snapshot and no later block can change
+   * what it did. Only a match that still needs something from the tail is
+   * harmed by the cap.
+   */
+  indexResolved: boolean;
 };
 
 /**
@@ -71,13 +113,14 @@ export type ScanOutcome = {
 export const WINDOW = 10_000n;
 
 /**
- * How far back to look before giving up.
+ * Ceiling on the live tail, in windows.
  *
- * At the observed block time of about 0.8s the chain advances roughly 108k
- * blocks a day, so this covers a little under four days. The bound is the
- * honest part of the design: a match older than this reports that its
- * transactions were not located, rather than showing nothing or, worse,
- * something invented.
+ * The tail is everything after the index's snapshot block, so on a freshly
+ * regenerated index it is nearly empty and this never binds. It binds when the
+ * index has been left to go stale: at roughly ten windows a day, forty windows
+ * is about four days of drift before the scan can no longer reach the
+ * snapshot. Past that the outcome carries tailCapped and the caller says so,
+ * rather than presenting a gap as a complete answer.
  */
 export const MAX_WINDOWS = 40;
 
@@ -135,8 +178,11 @@ export function explorerTxUrl(txId: string): string | null {
  * `claim` is deliberately excluded: a settled match may have nought, one or
  * two claims depending on who has withdrawn, so waiting for one would make
  * every scan run to exhaustion. Claims are collected when seen, and because
- * they always happen after settlement and the scan walks backwards from the
- * chain tip, they are seen before the transaction that requires them.
+ * they always happen after settlement and the live tail is still walked
+ * backwards from the chain tip, they are seen before the transaction that
+ * requires them. The index does not disturb this: it is merged in whole, so a
+ * claim recorded before the snapshot arrives with its own settle rather than
+ * depending on the order anything was scanned in.
  */
 export function requiredMethods(m: {
   settled: boolean;
@@ -207,6 +253,87 @@ export async function pool<T, R>(items: T[], workers: number, fn: (item: T) => P
   return out;
 }
 
+/** An index entry in the shape the rest of the app already speaks. */
+export function historyEntryToTx(e: HistoryEntry): MatchTx | null {
+  if (!e.method || !LINKED.has(e.method)) return null;
+  return {
+    method: e.method as LinkedMethod,
+    txId: e.hash,
+    block: String(e.block),
+    status: e.status,
+  };
+}
+
+/**
+ * Live results over indexed ones, newest first.
+ *
+ * Live wins on a collision because the index records a status observed at
+ * snapshot time and the live read is by definition not older. Every method
+ * keeps one entry except `claim`, which each party sends separately and which
+ * therefore accumulates.
+ */
+export function mergeMatchTxs(live: MatchTx[], indexed: MatchTx[]): MatchTx[] {
+  const out: MatchTx[] = [];
+  const seenId = new Set<string>();
+  const seenMethod = new Set<string>();
+
+  for (const tx of [...live, ...indexed]) {
+    if (seenId.has(tx.txId)) continue;
+    if (tx.method !== "claim" && seenMethod.has(tx.method)) continue;
+    seenId.add(tx.txId);
+    seenMethod.add(tx.method);
+    out.push(tx);
+  }
+
+  return out.sort((a, b) => Number(b.block) - Number(a.block));
+}
+
+/**
+ * The live tail, as windows, walked backwards from the tip.
+ *
+ * Floored at the block after the snapshot, because everything below that is
+ * already answered. Returns `capped` when the tail needs more windows than the
+ * budget allows, which is the one case where the result has a hole in it.
+ */
+export function tailWindows(
+  latest: bigint,
+  snapshotBlock: number,
+  maxWindows: number,
+): { windows: { from: bigint; to: bigint }[]; capped: boolean } {
+  const floor = BigInt(snapshotBlock) + 1n;
+  if (latest < floor) return { windows: [], capped: false };
+
+  const windows: { from: bigint; to: bigint }[] = [];
+  let to = latest;
+  let capped = false;
+
+  while (to >= floor) {
+    if (windows.length >= maxWindows) {
+      capped = true;
+      break;
+    }
+    const from = to - WINDOW + 1n > floor ? to - WINDOW + 1n : floor;
+    windows.push({ from, to });
+    if (from === floor) break;
+    to = from - 1n;
+  }
+
+  return { windows, capped };
+}
+
+/**
+ * Whether the committed index alone already answers this match.
+ *
+ * Terminal status is the condition that matters. An entry still in flight when
+ * the snapshot ran could change, so it does not count as answered no matter
+ * which method it carries.
+ */
+export function indexAnswersMatch(required: LinkedMethod[], indexed: MatchTx[]): boolean {
+  return required.every((m) =>
+    indexed.some((tx) => tx.method === m && isTerminalStatus(tx.status)),
+  );
+}
+
 export type ScanOptions = {
   onProgress?: (windowsDone: number, windowsTotal: number) => void;
   /** Checked between windows so a unmounting view stops the scan promptly. */
@@ -224,41 +351,114 @@ export async function scanMatchTransactions(
   required: LinkedMethod[],
   opts: ScanOptions = {},
 ): Promise<ScanOutcome> {
+  // The index first. It is free, it is already complete for everything at or
+  // below the snapshot, and knowing what it holds is what lets the live walk
+  // stop early instead of hunting for a transaction that is already in hand.
+  const indexed: MatchTx[] = [];
+  const stale: HistoryEntry[] = staleEntries(historyFor(matchId, LINKED));
+  for (const entry of historyFor(matchId, LINKED)) {
+    const tx = historyEntryToTx(entry);
+    if (tx) indexed.push(tx);
+  }
+
+  const base: ScanOutcome = {
+    txs: indexed,
+    windowsScanned: 0,
+    blocksScanned: 0,
+    exhausted: false,
+    degraded: null,
+    snapshotBlock: SNAPSHOT_BLOCK,
+    tailCapped: false,
+    indexResolved: indexAnswersMatch(required, indexed),
+  };
+
   const event = newTransactionEvent();
   const consensus = CHAIN.consensusMainContract?.address as `0x${string}` | undefined;
-  const empty: ScanOutcome = {
-    txs: [], windowsScanned: 0, blocksScanned: 0, exhausted: false, degraded: null,
-  };
   if (!event || !consensus) {
-    return { ...empty, degraded: "this chain does not expose the transaction index" };
+    return { ...base, degraded: "this chain does not expose the transaction index" };
   }
 
   const client = readClient() as any;
   const wanted = String(matchId);
   const found: MatchTx[] = [];
   const seen = new Set<string>();
-  const stillNeeded = new Set<string>(required);
+
+  // Only what the index could not answer. A match settled before the snapshot
+  // needs nothing from the tail, so its walk stops after one window.
+  const stillNeeded = new Set<string>(
+    required.filter((m) => !indexed.some((tx) => tx.method === m)),
+  );
 
   let latest: bigint;
   try {
     latest = await withBackoff(() => client.getBlockNumber());
   } catch (err) {
-    return { ...empty, degraded: readableFailure(err) };
+    return { ...base, degraded: readableFailure(err), exhausted: !base.indexResolved };
+  }
+
+  // An entry that was not terminal when the snapshot ran has to be re-read
+  // before anybody sees its status. Normally there are none.
+  const refreshed = new Map<string, string>();
+  for (const entry of stale) {
+    try {
+      const tx: any = await withBackoff(() => client.getTransaction({ hash: entry.hash }));
+      refreshed.set(entry.hash, String(tx?.statusName ?? entry.status));
+    } catch {
+      // Leave the snapshot value in place; a failed read is not new evidence.
+    }
+  }
+  const indexedNow = refreshed.size
+    ? indexed.map((tx) => ({ ...tx, status: refreshed.get(tx.txId) ?? tx.status }))
+    : indexed;
+
+  const { windows: tail, capped } = tailWindows(latest, SNAPSHOT_BLOCK, MAX_WINDOWS);
+
+  // Decided once, from the index alone. A match the index already answers is
+  // complete whatever the tail did, so the cap below must not touch it.
+  const indexResolved = indexAnswersMatch(required, indexedNow);
+
+  /**
+   * The gap that a capped tail actually costs.
+   *
+   * Only reachable when the index did not answer the match, which is the one
+   * case where the unread blocks could have held the missing transaction.
+   */
+  const CAPPED_GAP =
+    "the blocks between the committed index and the live scan were not read, " +
+    "so a transaction in that range would not be found";
+
+  const settle = (over: MatchTx[], scanned: number, degraded: string | null): ScanOutcome => {
+    const txs = mergeMatchTxs(over, indexedNow);
+    // Completeness is read off the answer, not off which half produced it. A
+    // method the live tail found is just as found as one the index held.
+    const complete = required.every((m) => txs.some((t) => t.method === m));
+    return {
+      txs,
+      windowsScanned: scanned,
+      blocksScanned: tail.slice(0, scanned).reduce((n, w) => n + Number(w.to - w.from) + 1, 0),
+      exhausted: !complete,
+      degraded: degraded ?? (capped && !complete ? CAPPED_GAP : null),
+      snapshotBlock: SNAPSHOT_BLOCK,
+      tailCapped: capped,
+      indexResolved,
+    };
+  };
+
+  if (!tail.length) {
+    return settle([], 0, null);
   }
 
   /** One window of logs, or a failure we can report without losing progress. */
   const fetchWindow = async (i: number) => {
-    const to = latest - BigInt(i) * WINDOW;
-    if (to <= 0n) return { i, logs: [] as any[], error: null as unknown };
-    const from = to - WINDOW + 1n > 0n ? to - WINDOW + 1n : 0n;
+    const w = tail[i];
     try {
       const logs = await withBackoff(() =>
         client.getLogs({
           address: consensus,
           event,
           args: { recipient: CARNAGE_ADDRESS },
-          fromBlock: from,
-          toBlock: to,
+          fromBlock: w.from,
+          toBlock: w.to,
         }),
       );
       return { i, logs: logs as any[], error: null as unknown };
@@ -269,11 +469,11 @@ export async function scanMatchTransactions(
 
   let scanned = 0;
 
-  for (let base = 0; base < MAX_WINDOWS; base += LOG_BATCH) {
+  for (let start = 0; start < tail.length; start += LOG_BATCH) {
     if (opts.isCancelled?.()) break;
 
     const batch = [];
-    for (let k = 0; k < LOG_BATCH && base + k < MAX_WINDOWS; k++) batch.push(base + k);
+    for (let k = 0; k < LOG_BATCH && start + k < tail.length; k++) batch.push(start + k);
     const windows = await Promise.all(batch.map(fetchWindow));
 
     for (const w of windows) {
@@ -281,13 +481,7 @@ export async function scanMatchTransactions(
       // worth showing, but they must never be cached: the gap is the
       // network's doing, not evidence that the transaction does not exist.
       if (w.error) {
-        return {
-          txs: found,
-          windowsScanned: scanned,
-          blocksScanned: scanned * Number(WINDOW),
-          exhausted: stillNeeded.size > 0,
-          degraded: readableFailure(w.error),
-        };
+        return settle(found, scanned, readableFailure(w.error));
       }
 
       // Newest first within the window, so claims are collected before the
@@ -335,37 +529,19 @@ export async function scanMatchTransactions(
       }
 
       scanned += 1;
-      opts.onProgress?.(scanned, MAX_WINDOWS);
+      opts.onProgress?.(scanned, tail.length);
 
       if (stillNeeded.size === 0) {
-        return {
-          txs: found,
-          windowsScanned: scanned,
-          blocksScanned: scanned * Number(WINDOW),
-          exhausted: false,
-          degraded: readFailure,
-        };
+        return settle(found, scanned, readFailure);
       }
 
       if (readFailure) {
-        return {
-          txs: found,
-          windowsScanned: scanned,
-          blocksScanned: scanned * Number(WINDOW),
-          exhausted: true,
-          degraded: readFailure,
-        };
+        return settle(found, scanned, readFailure);
       }
     }
   }
 
-  return {
-    txs: found,
-    windowsScanned: scanned,
-    blocksScanned: scanned * Number(WINDOW),
-    exhausted: stillNeeded.size > 0,
-    degraded: null,
-  };
+  return settle(found, scanned, null);
 }
 
 function readableFailure(err: unknown): string {
@@ -420,7 +596,11 @@ export function writeCachedTransactions(
   outcome: ScanOutcome,
   required: LinkedMethod[],
 ): void {
+  // A capped tail only makes the result partial when the index did not already
+  // answer the match. When it did, the match finished below the snapshot and
+  // nothing above it can change what happened, so this is safe to store.
   if (outcome.degraded || outcome.exhausted) return;
+  if (outcome.tailCapped && !outcome.indexResolved) return;
   if (!required.every((m) => outcome.txs.some((t) => t.method === m))) return;
   if (!outcome.txs.every((t) => t.status === "FINALIZED")) return;
   try {

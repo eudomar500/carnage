@@ -373,6 +373,19 @@ function shortTx(txId: string): string {
 }
 
 /**
+ * Why a method has no link, in the reader's terms.
+ *
+ * Two sources answer this section and a reader cannot be expected to know
+ * that, so the note names both rather than quoting a block count that means
+ * nothing on its own. See chain/txlog.ts for why the split exists.
+ */
+function missingNote(lookup: Extract<TxLookup, { state: "ready" }>): string {
+  if (lookup.degraded) return `not located (${lookup.degraded})`;
+  const through = lookup.snapshotBlock.toLocaleString("en-US");
+  return `not located in the committed index through block ${through}, nor in the ${lookup.windowsScanned} live windows after it`;
+}
+
+/**
  * The verification strip under a frame.
  *
  * Every link here is a hash read from the chain for this specific match. When
@@ -426,11 +439,7 @@ function ProofLinks({ methods, lookup }: { methods: LinkedMethod[]; lookup: TxLo
       {missing.map((method) => (
         <span key={method} className="proof-item proof-item--missing">
           <code className="proof-method">{method}</code>
-          <span className="proof-miss">
-            {lookup.degraded
-              ? `not located (${lookup.degraded})`
-              : `not located in the last ${lookup.blocksScanned.toLocaleString("en-US")} blocks`}
-          </span>
+          <span className="proof-miss">{missingNote(lookup)}</span>
         </span>
       ))}
 

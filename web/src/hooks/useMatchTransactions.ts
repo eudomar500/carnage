@@ -8,6 +8,7 @@ import {
   type MatchTx,
   type ScanOutcome,
 } from "../chain/txlog";
+import { SNAPSHOT_BLOCK } from "../chain/history";
 
 export type TxLookup =
   /** Not asked for yet. The scan costs RPC, so it waits to be needed. */
@@ -20,7 +21,16 @@ export type TxLookup =
       exhausted: boolean;
       /** Stopped early for a transport reason; what is here may be partial. */
       degraded: string | null;
+      /** Blocks of live tail read after the snapshot. */
       blocksScanned: number;
+      /** Live-tail windows read after the snapshot. */
+      windowsScanned: number;
+      /** The block the committed index answers through. */
+      snapshotBlock: number;
+      /** True when the live tail was wider than the budget could cover. */
+      tailCapped: boolean;
+      /** The committed index alone answered every required method. */
+      indexResolved: boolean;
     };
 
 type Progress = { key: string; done: number; total: number };
@@ -29,9 +39,11 @@ type Result = { key: string; outcome: ScanOutcome };
 /**
  * Finds the on-chain transactions behind a resolved match, once.
  *
- * Lazy on purpose. The scan is a sequence of log queries and transaction reads
- * against a rate-limited node, so it does not run until something on screen
- * actually needs a link. It never runs twice for the same match either: a
+ * Answers from the committed index plus a live scan of the blocks after it;
+ * chain/txlog.ts explains why that split exists. Lazy on purpose. The live
+ * half is a sequence of log queries and transaction reads against a
+ * rate-limited node, so it does not run until something on screen actually
+ * needs a link. It never runs twice for the same match either: a
  * cached result short-circuits it before the effect, and a ref guard keeps the
  * twelve-second match poll, and reopening a frame, from restarting it.
  *
@@ -94,6 +106,9 @@ export function useMatchTransactions(
             blocksScanned: 0,
             exhausted: true,
             degraded: String((err as any)?.message ?? err).replace(/\s+/g, " ").slice(0, 140),
+            snapshotBlock: SNAPSHOT_BLOCK,
+            tailCapped: false,
+            indexResolved: false,
           },
         });
       });
@@ -110,7 +125,19 @@ export function useMatchTransactions(
   if (!active) return { state: "idle" };
 
   if (cached) {
-    return { state: "ready", txs: cached, exhausted: false, degraded: null, blocksScanned: 0 };
+    // Only a complete, entirely final scan is ever cached, so nothing here is
+    // partial and there is no live tail left to describe.
+    return {
+      state: "ready",
+      txs: cached,
+      exhausted: false,
+      degraded: null,
+      blocksScanned: 0,
+      windowsScanned: 0,
+      snapshotBlock: SNAPSHOT_BLOCK,
+      tailCapped: false,
+      indexResolved: true,
+    };
   }
 
   if (result?.key === key) {
@@ -121,6 +148,10 @@ export function useMatchTransactions(
       exhausted: o.exhausted,
       degraded: o.degraded,
       blocksScanned: o.blocksScanned,
+      windowsScanned: o.windowsScanned,
+      snapshotBlock: o.snapshotBlock,
+      tailCapped: o.tailCapped,
+      indexResolved: o.indexResolved,
     };
   }
 
