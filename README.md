@@ -14,6 +14,10 @@ Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a pr
 
 ---
 
+## Why this matters
+
+Carnage is an adversarial benchmark for the layer the agent economy is quietly betting on: an AI jury that reads natural-language claims and returns a verdict with money attached, and that layer has a known weakness. A growing body of research on "LLM-as-a-Judge" systems, the paradigm of using a language model to evaluate text, has shown that these judges can be manipulated by the very inputs they are asked to judge, and recent work formalizing prompt-injection attacks against judge architectures reports attack success rates above 30 percent against current models ([Investigating the Vulnerability of LLM-as-a-Judge Architectures to Prompt-Injection Attacks](https://arxiv.org/abs/2505.13348); reported in published research, not a Carnage measurement). Most systems that use an AI jury never test this and demonstrate the happy path instead: two well-behaved parties, a clean verdict, applause. Carnage does the opposite: the recorded matches are built to test the jury, with claims written to mislead it, one written to attack it directly, and honest claims alongside as the baseline, every one of them on the record.
+
 ## What a match is
 
 - **Holder** privately commits a `minimum_price`: the lowest price it would truly accept.
@@ -186,6 +190,20 @@ cd web && npm install && npm run dev                      # the app
 ```
 
 See [web/README.md](web/README.md) for the front-end commands.
+
+## Playing a match
+
+**Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the eight recorded matches were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
+
+**Bradbury, and testnet GEN.** The app is pinned to GenLayer Bradbury and every stake, credit and payout is in its native GEN. Fund the seats with testnet GEN from the GenLayer faucet. Stakes are deliberately small; the record was played at 0.01 GEN a side.
+
+**Wallet connection is plain EIP-1193.** Connecting is `eth_requestAccounts` followed by `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` when the wallet does not know Bradbury yet. Any ordinary injected EVM wallet that can switch chains works; the GenLayer snap and MetaMask Flask are not used and not needed. Salts are never stored anywhere: each is derived from a deterministic wallet signature over a fixed, match-bound message, so the only thing to carry from commit to reveal is the number that was committed.
+
+**Expect the jury to take minutes, not seconds.** Summoning it runs a live validator network, each validator classifying both claims itself, and the wait for the round to be accepted alone can run to six minutes. A round can also end without writing anything, either because the leader timed out or because the validators did not converge; nothing leaves escrow when that happens and the step stays open to be summoned again. Two of the ten adjudicate transactions on the record ended that way. Settlement is scheduled for the moment an accepted adjudication finalizes, with `force_settle` as the manual fallback about two hours later.
+
+**Nobody can strand GEN.** Every dead end has a permissionless, deadline-gated exit: `refund_before_lock`, `resolve_no_reveal`, `resolve_inconclusive` and `force_settle`. Any wallet can trigger them, and refunds land the same way payouts do, as claimable balances each side withdraws with `claim`.
+
+A plain-language walkthrough of a full match is on the site: [How Carnage works, in plain language](https://eudomar500.github.io/carnage/?post=how-carnage-works).
 
 ## Known limitations
 
