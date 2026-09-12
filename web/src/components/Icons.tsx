@@ -74,3 +74,19 @@ export const Bell = (p: P) => (
     <path d="M12 5.5V3.6" />
   </S>
 );
+
+export const SpeakerOn = (p: P) => (
+  <S {...p}>
+    <path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" />
+    <path d="M15.5 9.2a4 4 0 0 1 0 5.6" />
+    <path d="M18 6.8a7.5 7.5 0 0 1 0 10.4" />
+  </S>
+);
+
+export const SpeakerOff = (p: P) => (
+  <S {...p}>
+    <path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" />
+    <path d="M16 9.8l4.5 4.4" />
+    <path d="M20.5 9.8L16 14.2" />
+  </S>
+);

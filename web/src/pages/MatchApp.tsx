@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import TopNav, { type NavShell } from "../components/TopNav";
-import JudgeTrex, { type BiteSide } from "../components/JudgeTrex";
+import JudgeTrex from "../components/JudgeTrex";
 import AgentCard from "../components/AgentCard";
 import StepDiagram from "../components/StepDiagram";
 import VerdictBar from "../components/VerdictBar";
@@ -18,6 +18,8 @@ import { derivePhase, isStrike, judgeMood, type JudgeMood } from "../chain/phase
 import { CARNAGE_ADDRESS } from "../chain/client";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
 import { PREVIEWS, type PreviewSelection } from "../dev/preview";
+import { SpeakerOff, SpeakerOn } from "../components/Icons";
+import { playRoar, preloadRoar, readMuted, writeMuted } from "../lib/roar";
 
 const LEFT_RAIL = ["CREATE", "COMMIT", "FUND", "NEGOTIATE", "ANCHOR CLAIMS"];
 const RIGHT_RAIL = ["REVEAL", "VERIFY", "GENLAYER", "CONSENSUS", "FINALITY", "SETTLE", "REPLAY"];
@@ -36,23 +38,29 @@ export type MatchAppProps = {
 };
 
 /*
- * The reaction, in two phases.
+ * The reaction, on one clock.
  *
- * The threat runs once for the whole settlement: the judge opens its jaws at
- * centre, holds, and closes them again, aimed at nobody. Then one strike per
- * slashed card, mouth shut, turning to the card and hitting its near edge. Two
- * adverse labels are one threat and two strikes, 3300 ms end to end, rather
- * than the same jaws opening twice.
+ * The judge roars for 3000 ms and never leaves the centre. At 2000 ms a
+ * shockwave leaves its mouth, and it reaches the cards as the jaws close, at
+ * 3000 ms, which is where every adverse card breaks. The second one breaks
+ * 120 ms after the first so the pair does not land as one sound.
  *
- * The gap is what keeps the phases apart: the threat's jaws finish closing at
- * the end of --threat-ms, and the first strike starts a further 150 ms later,
- * so the head never moves while the two frames are mid-cross-fade.
+ * The threat is 3000 ms whether the roar plays or not, and judge-roar.mp3 is
+ * cut to the same length, so the sound ends as the jaws close. A muted reader
+ * and one whose browser refused to autoplay both get the same animation as
+ * everybody else, which is why nothing here waits on the sound.
  *
- * The same figures drive --threat-ms and --strike-ms in styles.css.
+ * These are the same figures as --threat-ms, --wave-ms and --impact-ms in
+ * styles.css; each pair has to agree or a card starts breaking before the ring
+ * has reached it.
  */
-const THREAT_MS = 1200;
-const STRIKE_MS = 900;
-const PHASE_GAP_MS = 150;
+const THREAT_MS = 3000;
+/** The ring leaves the mouth here and crosses the hero in the time that is left. */
+const WAVE_AT_MS = 2000;
+const WAVE_MS = THREAT_MS - WAVE_AT_MS;
+/** Vibration, crack draw and embers all start together and the embers end last. */
+const IMPACT_MS = 600;
+const IMPACT_STAGGER_MS = 120;
 
 /*
  * Development-only replay switch.
@@ -113,7 +121,22 @@ export default function MatchApp({
   // drawn chewed once it is in neither: on a reload of a settled match both are
   // empty from the start, so the chewed state is there without the sequence.
   const [threat, setThreat] = useState(false);
-  const [biting, setBiting] = useState<BiteSide>(null);
+  const [wave, setWave] = useState(false);
+  const [muted, setMuted] = useState(readMuted);
+  // Read inside fireReaction, which must not be rebuilt every time the reader
+  // toggles the sound: the mood effect depends on its identity.
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+  useEffect(() => {
+    preloadRoar();
+  }, []);
+  // Seats the shockwave has already reached, and seats still waiting for it. A
+  // card is drawn broken once it is out of the second list: on a reload of a
+  // settled match it is empty from the start, so the rest state is there
+  // without any of the sequence.
+  const [breaking, setBreaking] = useState<Role[]>([]);
   const [queued, setQueued] = useState<Role[]>([]);
   const biteTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -130,36 +153,52 @@ export default function MatchApp({
       reactTimer.current = setTimeout(() => setReacting(false), 1500);
 
       clearBiteTimers();
-      // Reduced motion gets the outcome without the choreography: no bite, and
-      // the chewed cards are already on screen because nothing is queued.
+      // Reduced motion gets the outcome without the choreography: no bite, no
+      // roar, and the chewed cards are already on screen because nothing is
+      // queued.
       const reduced =
         typeof window !== "undefined" &&
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       if (reduced || seats.length === 0) {
         setQueued([]);
-        setBiting(null);
+        setBreaking([]);
         setThreat(false);
+        setWave(false);
         return;
       }
 
       // The cards stay whole through the threat: a seat still in the queue has
       // not been hit yet, which is what holds its chewed state back.
       setQueued(seats);
+
+      // The roar rides alongside the animation rather than driving it, so a
+      // refused autoplay costs the sound and nothing else.
+      playRoar(mutedRef.current);
+
       setThreat(true);
       biteTimers.current.push(setTimeout(() => setThreat(false), THREAT_MS));
 
-      let at = THREAT_MS + PHASE_GAP_MS;
-      for (const seat of seats) {
-        const start = at;
-        biteTimers.current.push(setTimeout(() => setBiting(seat), start));
+      setWave(false);
+      biteTimers.current.push(setTimeout(() => setWave(true), WAVE_AT_MS));
+      biteTimers.current.push(setTimeout(() => setWave(false), WAVE_AT_MS + WAVE_MS));
+
+      seats.forEach((seat, i) => {
+        const at = THREAT_MS + i * IMPACT_STAGGER_MS;
         biteTimers.current.push(
           setTimeout(() => {
-            setBiting(null);
+            // The same instant does both: the card leaves the queue, which is
+            // what puts it into its broken rest state, and takes the impact
+            // classes that animate the break on top of it.
             setQueued((rest) => rest.filter((s) => s !== seat));
-          }, start + STRIKE_MS),
+            setBreaking((rest) => (rest.includes(seat) ? rest : [...rest, seat]));
+          }, at),
         );
-        at += STRIKE_MS + PHASE_GAP_MS;
-      }
+        biteTimers.current.push(
+          setTimeout(() => {
+            setBreaking((rest) => rest.filter((s) => s !== seat));
+          }, at + IMPACT_MS),
+        );
+      });
     },
     [clearBiteTimers],
   );
@@ -174,6 +213,24 @@ export default function MatchApp({
     if (previous === null && !BITE_PREVIEW) return;
     if (previous === mood) return;
     if (!isStrike(mood)) return;
+
+    // Armed rather than fired, because a browser refuses to play the roar
+    // before the page has seen a gesture, and a silent preview is the one
+    // thing this switch exists to avoid. Either input fires it once.
+    if (BITE_PREVIEW && previous === null) {
+      const fire = () => {
+        window.removeEventListener("pointerdown", fire);
+        window.removeEventListener("keydown", fire);
+        fireReaction(bittenSeats(mood));
+      };
+      window.addEventListener("pointerdown", fire);
+      window.addEventListener("keydown", fire);
+      return () => {
+        window.removeEventListener("pointerdown", fire);
+        window.removeEventListener("keydown", fire);
+      };
+    }
+
     fireReaction(bittenSeats(mood));
   }, [mood, phase, tick, fireReaction]);
   useEffect(
@@ -221,7 +278,8 @@ export default function MatchApp({
       className={
         `stage stage--${mood}` +
         (reacting ? " stage--reacting" : "") +
-        (threat ? " stage--threat" : "")
+        (threat ? " stage--threat" : "") +
+        (wave ? " stage--wave" : "")
       }
       id="top"
     >
@@ -311,12 +369,11 @@ export default function MatchApp({
   const gate = claimGate(m, wallet);
   const pool = m.stake_amount * 2n;
   const stillLocked = m.holder_claimable + m.buyer_claimable + m.sink_claimable;
-  // A card is chewed once settlement slashed it and the jaws have let it go.
-  // While it is queued or in the mouth it still looks whole, because it has
-  // not been eaten yet.
-  const inJaws = (seat: Role) => biting === seat || queued.includes(seat);
-  const holderCracked = m.settled && isDishonest(m.holder_label) && !inJaws("holder");
-  const buyerCracked = m.settled && isDishonest(m.buyer_label) && !inJaws("buyer");
+  // A card is broken once settlement slashed it and the wave has reached it.
+  // While it is still queued it looks whole, because nothing has hit it yet.
+  const holderCracked =
+    m.settled && isDishonest(m.holder_label) && !queued.includes("holder");
+  const buyerCracked = m.settled && isDishonest(m.buyer_label) && !queued.includes("buyer");
 
   return shell(
     <>
@@ -329,6 +386,21 @@ export default function MatchApp({
           <div className="badge-sub">Built on GenLayer</div>
         </div>
 
+        <button
+          type="button"
+          className="mute-toggle"
+          aria-label={muted ? "Unmute the judge" : "Mute the judge"}
+          aria-pressed={muted}
+          title={muted ? "Unmute the judge" : "Mute the judge"}
+          onClick={() => {
+            const next = !muted;
+            setMuted(next);
+            writeMuted(next);
+          }}
+        >
+          {muted ? <SpeakerOff className="mute-icon" /> : <SpeakerOn className="mute-icon" />}
+        </button>
+
         <div className="badge badge--match">
           <div className="badge-label">MATCH ID</div>
           <div className="badge-value">
@@ -340,7 +412,10 @@ export default function MatchApp({
           </div>
         </div>
 
-        <JudgeTrex mood={mood} strikeKey={strikeKey} bite={biting} />
+        <JudgeTrex mood={mood} strikeKey={strikeKey} />
+
+        {/* One ring, from the judge's mouth out past the card slots. */}
+        <span className="shockwave" aria-hidden="true" />
 
         <ol className="rail rail--left">
           {LEFT_RAIL.map((s) => <li key={s}>{s}</li>)}
@@ -359,7 +434,7 @@ export default function MatchApp({
             stake={m.stake_amount}
             label={m.holder_label}
             cracked={holderCracked}
-            eating={biting === "holder"}
+            impact={breaking.includes("holder")}
           />
         </div>
 
@@ -377,7 +452,7 @@ export default function MatchApp({
             stake={m.stake_amount}
             label={m.buyer_label}
             cracked={buyerCracked}
-            eating={biting === "buyer"}
+            impact={breaking.includes("buyer")}
           />
         </div>
 
