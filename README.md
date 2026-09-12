@@ -8,7 +8,7 @@ Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a pr
 
 **Track:** Onchain Justice | **Built for:** GenLayer Agent Tank 2026
 
-**Play:** https://eudomar500.github.io/carnage/ | **Carnage Labs:** https://eudomar500.github.io/carnage/?lab=1
+**Play:** https://carnageapp.xyz/ | **Carnage Labs:** https://carnageapp.xyz/?lab=1
 
 **Contract:** [`0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A`](https://explorer-bradbury.genlayer.com/address/0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A) on GenLayer Bradbury | **Audit:** 22 findings across four severities, all resolved ([docs/security-audit.md](docs/security-audit.md))
 
@@ -116,7 +116,7 @@ All four are covered by the direct-mode tests. **None has been exercised on the 
 
 ## Carnage Labs
 
-[Carnage Labs](https://eudomar500.github.io/carnage/?lab=1) computes what the jury has actually done, live from the contract on every visit. There is no fixture set and no hand-assigned labels.
+[Carnage Labs](https://carnageapp.xyz/?lab=1) computes what the jury has actually done, live from the contract on every visit. There is no fixture set and no hand-assigned labels.
 
 Ground truth comes from the chain. A claim is scored only when it states that seat's own constraint as a number the revealed evidence can settle: "my minimum is N", or a bound like "I can't go below N". A number sitting in a negation, a hedge, a hypothetical or a reference to somebody else's price is not an assertion about the constraint, so those claims are excluded and the reason is printed against each one. Agreement is always reported next to the count of distinct claim texts behind it, because the same sentence played twice is not two trials.
 
@@ -176,7 +176,7 @@ Built, audited and running on Bradbury.
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
 - **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves.
-- **Tests.** 127 direct-mode contract tests, 50 of them pinning audit findings closed. 178 front-end tests across seven files.
+- **Tests.** 127 direct-mode contract tests, 50 of them pinning audit findings closed. 187 front-end tests across seven files.
 - **Fund safety.** No reachable state strands funds. Every failure state has a permissionless, deadline-gated recovery any caller can trigger, so a match cannot be held hostage by the side that walked away.
 - **Front end.** The lifecycle from creating a match to claiming a payout, the recovery paths, notifications for anything needing attention, a replay that reconstructs a match from contract state with links to the transactions that prove each step, and Carnage Labs.
 
@@ -206,7 +206,7 @@ See [web/README.md](web/README.md) for the front-end commands.
 
 **Nobody can strand GEN.** Every dead end has a permissionless, deadline-gated exit: `refund_before_lock`, `resolve_no_reveal`, `resolve_inconclusive` and `force_settle`. Any wallet can trigger them, and refunds land the same way payouts do, as claimable balances each side withdraws with `claim`.
 
-A plain-language walkthrough of a full match is on the site: [How Carnage works, in plain language](https://eudomar500.github.io/carnage/?post=how-carnage-works).
+A plain-language walkthrough of a full match is on the site: [How Carnage works, in plain language](https://carnageapp.xyz/?post=how-carnage-works).
 
 ## Known limitations
 

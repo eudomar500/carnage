@@ -10,7 +10,7 @@ const EXPLORER_TX =
   "https://explorer-bradbury.genlayer.com/tx/0xfe3094026f96ebeb22dab0c0c6a52d67ea22ae41a461e8d23db66bb754a36c93";
 
 /** The companion piece: the mechanics, without the argument. */
-const WALKTHROUGH = "https://eudomar500.github.io/carnage/?post=how-carnage-works";
+const WALKTHROUGH = "https://carnageapp.xyz/?post=how-carnage-works";
 
 /** The doc is in the repo, so a reader of the site needs the GitHub copy. */
 const RESOLUTION_DOC =

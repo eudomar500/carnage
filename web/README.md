@@ -15,6 +15,9 @@ npm run lint       # oxlint
 npm run snapshot   # regenerate src/chain/history.json from the contract
 ```
 
+`BASE_PATH` sets the path the bundle is served from; it defaults to `/` for
+carnageapp.xyz, and the GitHub Pages workflow sets `/carnage/`.
+
 ## Two things worth knowing before editing
 
 The contract address and the chain live in `src/chain/client.ts`. Everything

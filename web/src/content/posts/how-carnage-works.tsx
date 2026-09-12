@@ -7,10 +7,10 @@
  * statement of what the deployed contract does. The numbers come from match 1
  * on that contract, which REPLAY_MATCH_1 opens.
  */
-const REPLAY_MATCH_1 = "https://eudomar500.github.io/carnage/?match=1";
+const REPLAY_MATCH_1 = "https://carnageapp.xyz/?match=1";
 
 /** The companion piece: why I built this, and the injection case. */
-const ARGUMENT = "https://eudomar500.github.io/carnage/?post=stress-test-for-the-judge";
+const ARGUMENT = "https://carnageapp.xyz/?post=stress-test-for-the-judge";
 
 export default function Body() {
   return (
