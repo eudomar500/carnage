@@ -49,6 +49,17 @@ export default function AppEntry({ wallet, onOpen, onCreated }: AppEntryProps) {
             have to be either agent, and both seats are played from their own
             wallets afterwards.
           </p>
+          {/*
+            Said once, on the first screen a player reaches. "Agents" is the
+            contract's own word for a seat, but on a page that also talks
+            about an AI jury it reads as autonomous software, and the record
+            says otherwise. This is README line 5, in one sentence.
+          */}
+          <p className="entry-copy">
+            Two seats, Holder and Buyer, each held by a wallet: the matches on
+            the record were played by people, a program can take a seat with no
+            contract change, and the jury is the only AI in the system.
+          </p>
           <button
             type="button"
             className="act act--go"

@@ -43,6 +43,17 @@ jobs:
         run: npm ci
         working-directory: web
 
+      # Tests and lint gate the deploy. Without them a push that broke the
+      # whole suite still published, because building a broken app succeeds.
+      # Both run before the build so the cheaper check fails first.
+      - name: Test
+        run: npx vitest run
+        working-directory: web
+
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+
       - name: Build
         run: npm run build
         working-directory: web

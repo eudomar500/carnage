@@ -205,6 +205,15 @@ export function ProposePricePanel({ wallet, match, role, refresh }: PanelProps) 
           <> The counterparty has not proposed yet.</>
         )}
       </p>
+      {/*
+        The window closes, and nothing else on this panel said so. A player
+        could sit here past the deadline and only find out from a revert.
+      */}
+      <p className="turn-hint turn-hint--muted">
+        Proposals are refused at or after lock_deadline,{" "}
+        <strong>{isoSeconds(Number(match.lock_deadline))}</strong>, which sits a
+        full reveal window before reveal_deadline.
+      </p>
       <div className="form-grid">
         <label className="form-row form-row--wide">
           <span>deal price</span>
@@ -445,12 +454,11 @@ export function RefundBeforeLockPanel({ wallet, match, role, refresh }: PanelPro
   return (
     <div className="panel-form">
       <p className="turn-hint">
-        The two sides funded but never agreed a deal price, and the lock
-        deadline has passed. Anyone may trigger the refund: the holder gets
-        back {formatToken(match.holder_escrow)} {TOKEN_SYMBOL} and the buyer
-        {" "}{formatToken(match.buyer_escrow)} {TOKEN_SYMBOL}, exactly what each
-        one funded. Nothing is slashed and nothing goes to the sink, because
-        nobody broke a rule here.
+        The price never locked and the lock deadline has passed. Anyone may
+        trigger the refund: each side gets back exactly what it funded, the
+        holder {formatToken(match.holder_escrow)} {TOKEN_SYMBOL} and the buyer
+        {" "}{formatToken(match.buyer_escrow)} {TOKEN_SYMBOL}. Nothing is
+        slashed and nothing goes to the sink, because nobody broke a rule here.
       </p>
       <p className="turn-hint turn-hint--muted">
         Refunds are credited as claimable balances, so each side still

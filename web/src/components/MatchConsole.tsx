@@ -106,7 +106,12 @@ function TerminalFlags({ m }: { m: MatchState }) {
     );
   }
   if (m.inconclusive_resolved) {
-    flags.push("inconclusive_resolved: the jury never decided, both stakes went back");
+    // The gate is a clock, not an assessment of the jury: resolve_inconclusive
+    // fires when inconclusive_deadline passes with the match unadjudicated.
+    // chain/lifecycle.ts already states it that way.
+    flags.push(
+      "inconclusive_resolved: the inconclusive deadline passed with no verdict written, both stakes went back",
+    );
   }
   if (m.refunded_before_lock) {
     flags.push("refunded_before_lock: no deal price was agreed, every stake went back");

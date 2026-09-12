@@ -55,7 +55,8 @@ export type Confirmation = {
  */
 const DISCARDED_NOTE =
   "This transaction finished on-chain without recording the change, so the " +
-  "round was discarded rather than applied. Nothing was spent. Send it again.";
+  "round was discarded rather than applied. Nothing was spent from escrow. " +
+  "Send it again.";
 
 const mine = <K extends keyof MatchState>(role: Role, holderKey: K, buyerKey: K) =>
   (m: MatchState) => Boolean(m[role === "holder" ? holderKey : buyerKey]);

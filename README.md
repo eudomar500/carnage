@@ -176,7 +176,7 @@ Built, audited and running on Bradbury.
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
 - **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves.
-- **Tests.** 127 direct-mode contract tests, 50 of them pinning audit findings closed. 171 front-end tests across six files.
+- **Tests.** 127 direct-mode contract tests, 50 of them pinning audit findings closed. 178 front-end tests across seven files.
 - **Fund safety.** No reachable state strands funds. Every failure state has a permissionless, deadline-gated recovery any caller can trigger, so a match cannot be held hostage by the side that walked away.
 - **Front end.** The lifecycle from creating a match to claiming a payout, the recovery paths, notifications for anything needing attention, a replay that reconstructs a match from contract state with links to the transactions that prove each step, and Carnage Labs.
 
@@ -184,7 +184,10 @@ Out of scope for now: a third seat, a Broker that can also misrepresent market i
 
 ## Running it
 
+Tested on Python 3.12 and Node 22.
+
 ```
+python3 -m venv .venv && . .venv/bin/activate             # PEP 668 distros refuse a system pip
 pip install -r requirements.txt && pytest tests/direct    # contract tests
 cd web && npm install && npm run dev                      # the app
 ```

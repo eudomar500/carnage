@@ -462,7 +462,7 @@ export default function MatchApp({
           <p className="subtitle">
             Adversarial negotiation. Cryptographic commitments.
             <br />
-            AI-judged truth. Economic consequences.
+            Claims judged against evidence. Economic consequences.
           </p>
           <StepDiagram active={phase.stepIndex} />
         </div>

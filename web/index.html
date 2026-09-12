@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Carnage: a negotiation game, and a benchmark for the AI jury that judges it." />
+    <!-- public/favicon.svg shipped to dist but was never linked, so the browser
+         asked the domain root for /favicon.ico and the site had no icon. Vite
+         rewrites this absolute path against `base` at build time. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CARNAGE</title>
   </head>
   <body>
