@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CARNAGE_ADDRESS } from "./client";
 import type { MatchState } from "./contract";
 import { ZERO_ADDRESS } from "./roles";
 import {
@@ -21,6 +22,18 @@ const BUYER = "0xBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbb";
 const SINK = "0xCCccCCccCCccCCccCCccCCccCCccCCccCCccCCcc";
 const STAKE = 1_000n;
 const HASH = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+/** A wallet in neither seat. The sink is normally one of these. */
+const OUTSIDER = "0xEEeeEEeeEEeeEEeeEEeeEEeeEEeeEEeeEEeeEEee";
+
+/**
+ * The storage key, spelled out rather than imported.
+ *
+ * key() is private, and a test that built it by calling the module could not
+ * catch the module changing it. Writing it here means the shape is pinned:
+ * contract, match, action, seat.
+ */
+const keyFor = (matchId: string, actionId: string, seat: string) =>
+  `carnage.attempt.${CARNAGE_ADDRESS.toLowerCase()}.${matchId}.${actionId}.${seat}`;
 
 /** The journal only ever talks to localStorage, so the tests supply one. */
 function installStorage(): void {
@@ -88,49 +101,54 @@ beforeEach(installStorage);
 
 describe("records", () => {
   it("round-trips an attempt", () => {
-    writeAttempt(7n, "commit", "pending", 1000);
-    expect(readAttempt(7n, "commit")).toEqual({
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    expect(readAttempt(7n, "commit", "holder")).toEqual({
       actionId: "commit",
+      seat: "holder",
       startedAt: 1000,
       outcome: "pending",
     });
   });
 
   it("keeps records for different actions apart", () => {
-    writeAttempt(7n, "commit", "pending", 1000);
-    writeAttempt(7n, "fund", "unconfirmed", 2000);
-    expect(readAttempt(7n, "commit")?.outcome).toBe("pending");
-    expect(readAttempt(7n, "fund")?.outcome).toBe("unconfirmed");
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    writeAttempt(7n, "fund", "holder", "unconfirmed", 2000);
+    expect(readAttempt(7n, "commit", "holder")?.outcome).toBe("pending");
+    expect(readAttempt(7n, "fund", "holder")?.outcome).toBe("unconfirmed");
   });
 
   it("keeps records for different matches apart", () => {
-    writeAttempt(7n, "commit", "pending", 1000);
-    expect(readAttempt(8n, "commit")).toBeNull();
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    expect(readAttempt(8n, "commit", "holder")).toBeNull();
   });
 
   it("returns null rather than throwing on stored garbage", () => {
-    localStorage.setItem("carnage.attempt.7.commit", "{not json");
-    expect(readAttempt(7n, "commit")).toBeNull();
+    localStorage.setItem(keyFor("7", "commit", "holder"), "{not json");
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
   });
 
   it("rejects a record with no timestamp", () => {
-    localStorage.setItem("carnage.attempt.7.commit", JSON.stringify({ outcome: "pending" }));
-    expect(readAttempt(7n, "commit")).toBeNull();
+    localStorage.setItem(
+      keyFor("7", "commit", "holder"),
+      JSON.stringify({ outcome: "pending" }),
+    );
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
   });
 
   it("clears a record", () => {
-    writeAttempt(7n, "commit", "pending");
-    clearAttempt(7n, "commit");
-    expect(readAttempt(7n, "commit")).toBeNull();
+    writeAttempt(7n, "commit", "holder", "pending");
+    clearAttempt(7n, "commit", "holder");
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
   });
 });
 
 describe("transaction hash", () => {
   it("stamps a hash without disturbing when the attempt started", () => {
-    writeAttempt(7n, "reveal", "pending", 1000);
-    noteHash(7n, "reveal", HASH);
-    expect(readAttempt(7n, "reveal")).toEqual({
+    writeAttempt(7n, "reveal", "holder", "pending", 1000);
+    noteHash(7n, "reveal", "holder", HASH);
+    expect(readAttempt(7n, "reveal", "holder")).toEqual({
       actionId: "reveal",
+      seat: "holder",
       startedAt: 1000,
       outcome: "pending",
       hash: HASH,
@@ -138,12 +156,13 @@ describe("transaction hash", () => {
   });
 
   it("carries the hash across an outcome change when it is passed back in", () => {
-    writeAttempt(7n, "reveal", "pending", 1000);
-    noteHash(7n, "reveal", HASH);
-    const prior = readAttempt(7n, "reveal")!;
-    writeAttempt(7n, "reveal", "unconfirmed", prior.startedAt, prior.hash);
-    expect(readAttempt(7n, "reveal")).toEqual({
+    writeAttempt(7n, "reveal", "holder", "pending", 1000);
+    noteHash(7n, "reveal", "holder", HASH);
+    const prior = readAttempt(7n, "reveal", "holder")!;
+    writeAttempt(7n, "reveal", "holder", "unconfirmed", prior.startedAt, prior.hash);
+    expect(readAttempt(7n, "reveal", "holder")).toEqual({
       actionId: "reveal",
+      seat: "holder",
       startedAt: 1000,
       outcome: "unconfirmed",
       hash: HASH,
@@ -151,52 +170,52 @@ describe("transaction hash", () => {
   });
 
   it("does not let a fresh attempt inherit the dead one's hash", () => {
-    writeAttempt(7n, "reveal", "pending", 1000);
-    noteHash(7n, "reveal", HASH);
-    writeAttempt(7n, "reveal", "pending", 5000);
-    expect(readAttempt(7n, "reveal")?.hash).toBeUndefined();
+    writeAttempt(7n, "reveal", "holder", "pending", 1000);
+    noteHash(7n, "reveal", "holder", HASH);
+    writeAttempt(7n, "reveal", "holder", "pending", 5000);
+    expect(readAttempt(7n, "reveal", "holder")?.hash).toBeUndefined();
   });
 
   it("does nothing when there is no attempt to stamp", () => {
-    noteHash(7n, "reveal", HASH);
-    expect(readAttempt(7n, "reveal")).toBeNull();
+    noteHash(7n, "reveal", "holder", HASH);
+    expect(readAttempt(7n, "reveal", "holder")).toBeNull();
   });
 });
 
 describe("reconcile", () => {
   it("drops a record whose change is visible on-chain", () => {
-    writeAttempt(base.match_id, "commit", "pending", 1000);
+    writeAttempt(base.match_id, "commit", "holder", "pending", 1000);
     reconcile(base, "holder");
-    expect(readAttempt(base.match_id, "commit")).toBeNull();
+    expect(readAttempt(base.match_id, "commit", "holder")).toBeNull();
   });
 
   it("keeps a record whose change has not landed", () => {
-    writeAttempt(base.match_id, "fund", "pending", 1000);
+    writeAttempt(base.match_id, "fund", "holder", "pending", 1000);
     reconcile(base, "buyer");
-    expect(readAttempt(base.match_id, "fund")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "fund", "holder")?.outcome).toBe("pending");
   });
 
   it("reads the postcondition for the right seat", () => {
-    writeAttempt(base.match_id, "fund", "pending", 1000);
+    writeAttempt(base.match_id, "fund", "holder", "pending", 1000);
     // The holder funded, the buyer did not. Same action, opposite answers.
     reconcile(base, "holder");
-    expect(readAttempt(base.match_id, "fund")).toBeNull();
+    expect(readAttempt(base.match_id, "fund", "holder")).toBeNull();
   });
 
   it("leaves an action that has no postcondition alone", () => {
-    writeAttempt(base.match_id, "create_match", "pending", 1000);
+    writeAttempt(base.match_id, "create_match", "holder", "pending", 1000);
     reconcile(base, "holder");
-    expect(readAttempt(base.match_id, "create_match")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "create_match", "holder")?.outcome).toBe("pending");
   });
 
   it("sweeps every action in one pass", () => {
-    writeAttempt(base.match_id, "commit", "pending", 1000);
-    writeAttempt(base.match_id, "fund", "pending", 1000);
-    writeAttempt(base.match_id, "reveal", "pending", 1000);
+    writeAttempt(base.match_id, "commit", "holder", "pending", 1000);
+    writeAttempt(base.match_id, "fund", "holder", "pending", 1000);
+    writeAttempt(base.match_id, "reveal", "holder", "pending", 1000);
     reconcile(base, "holder");
-    expect(readAttempt(base.match_id, "commit")).toBeNull();
-    expect(readAttempt(base.match_id, "fund")).toBeNull();
-    expect(readAttempt(base.match_id, "reveal")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "commit", "holder")).toBeNull();
+    expect(readAttempt(base.match_id, "fund", "holder")).toBeNull();
+    expect(readAttempt(base.match_id, "reveal", "holder")?.outcome).toBe("pending");
   });
 });
 
@@ -213,15 +232,15 @@ describe("the app-level sweep", () => {
   it("clears a record for a match that is not the one on screen", () => {
     // Started on match 7, user navigated to match 9.
     const seven = { ...base, match_id: 7n, holder_committed: true };
-    writeAttempt(7n, "commit", "pending", 1000);
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
 
     // The old per-match reconcile only ever saw the visible match.
     reconcile(other(9n), "holder");
-    expect(readAttempt(7n, "commit")?.outcome).toBe("pending");
+    expect(readAttempt(7n, "commit", "holder")?.outcome).toBe("pending");
 
     // The sweep sees every match the wallet has a stake in.
     reconcileAll([other(9n), seven], HOLDER, 9);
-    expect(readAttempt(7n, "commit")).toBeNull();
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
   });
 
   it("clears every orphaned action in one pass", () => {
@@ -253,7 +272,7 @@ describe("the app-level sweep", () => {
       "force_settle",
       "accept_sink",
     ] as const) {
-      writeAttempt(7n, id, "pending", 1000);
+      writeAttempt(7n, id, "holder", "pending", 1000);
     }
 
     reconcileAll([m], HOLDER, 7);
@@ -271,7 +290,7 @@ describe("the app-level sweep", () => {
       "force_settle",
       "accept_sink",
     ] as const) {
-      expect(readAttempt(7n, id), `${id} should have been swept`).toBeNull();
+      expect(readAttempt(7n, id, "holder"), `${id} should have been swept`).toBeNull();
     }
   });
 
@@ -287,55 +306,56 @@ describe("the app-level sweep", () => {
       holder_committed: false,
       buyer_committed: true,
     };
-    writeAttempt(7n, "commit", "pending", 1000);
-    writeAttempt(8n, "commit", "pending", 1000);
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    // The wallet sits in the buyer seat here, so this is the buyer's record.
+    writeAttempt(8n, "commit", "buyer", "pending", 1000);
 
     reconcileAll([asHolder, asBuyer], HOLDER, 8);
 
-    expect(readAttempt(7n, "commit")).toBeNull();
-    expect(readAttempt(8n, "commit")).toBeNull();
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
+    expect(readAttempt(8n, "commit", "buyer")).toBeNull();
   });
 
   it("leaves an attempt that genuinely has not landed", () => {
-    writeAttempt(7n, "reveal", "pending", 1000);
+    writeAttempt(7n, "reveal", "holder", "pending", 1000);
     reconcileAll([{ ...base, match_id: 7n }], HOLDER, 7);
-    expect(readAttempt(7n, "reveal")?.outcome).toBe("pending");
+    expect(readAttempt(7n, "reveal", "holder")?.outcome).toBe("pending");
   });
 });
 
 describe("an orphaned create", () => {
   it("clears once the predicted id exists", () => {
-    writeAttempt(CREATE_KEY_ID, "create_match", "pending", 1000);
-    noteTarget(CREATE_KEY_ID, "create_match", 6);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")?.target).toBe(6);
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
+    noteTarget(CREATE_KEY_ID, "create_match", "holder", 6);
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")?.target).toBe(6);
 
     // Discovery has not reached id 6 yet.
     reconcileCreate(5);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")?.outcome).toBe("pending");
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")?.outcome).toBe("pending");
 
     // Match 6 now answers, which is true at acceptance.
     reconcileCreate(6);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")).toBeNull();
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")).toBeNull();
   });
 
   it("clears through the app-level sweep as well", () => {
-    writeAttempt(CREATE_KEY_ID, "create_match", "pending", 1000);
-    noteTarget(CREATE_KEY_ID, "create_match", 6);
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
+    noteTarget(CREATE_KEY_ID, "create_match", "holder", 6);
     reconcileAll([], HOLDER, 6);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")).toBeNull();
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")).toBeNull();
   });
 
   it("keeps a create with no recorded target rather than guessing", () => {
-    writeAttempt(CREATE_KEY_ID, "create_match", "pending", 1000);
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
     reconcileCreate(99);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")?.outcome).toBe("pending");
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")?.outcome).toBe("pending");
   });
 
   it("keeps the hash when the target is stamped on", () => {
-    writeAttempt(CREATE_KEY_ID, "create_match", "pending", 1000);
-    noteHash(CREATE_KEY_ID, "create_match", HASH);
-    noteTarget(CREATE_KEY_ID, "create_match", 6);
-    const rec = readAttempt(CREATE_KEY_ID, "create_match");
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
+    noteHash(CREATE_KEY_ID, "create_match", "holder", HASH);
+    noteTarget(CREATE_KEY_ID, "create_match", "holder", 6);
+    const rec = readAttempt(CREATE_KEY_ID, "create_match", "holder");
     expect(rec?.hash).toBe(HASH);
     expect(rec?.target).toBe(6);
     expect(rec?.startedAt).toBe(1000);
@@ -346,9 +366,9 @@ describe("change notification", () => {
   it("tells listeners when a record is cleared", () => {
     let heard = 0;
     const stop = subscribe(() => { heard += 1; });
-    writeAttempt(7n, "commit", "pending", 1000);
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
     const afterWrite = heard;
-    clearAttempt(7n, "commit");
+    clearAttempt(7n, "commit", "holder");
     expect(heard).toBeGreaterThan(afterWrite);
     stop();
   });
@@ -357,12 +377,12 @@ describe("change notification", () => {
     let heard = 0;
     const stop = subscribe(() => { heard += 1; });
     stop();
-    writeAttempt(7n, "commit", "pending", 1000);
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
     expect(heard).toBe(0);
   });
 
   it("fires for a sweep that clears somebody else's match", () => {
-    writeAttempt(7n, "commit", "pending", 1000);
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
     let heard = 0;
     const stop = subscribe(() => { heard += 1; });
     reconcileAll([{ ...base, match_id: 7n, holder_committed: true }], HOLDER, 7);
@@ -374,7 +394,7 @@ describe("change notification", () => {
     let heard = 0;
     const bad = subscribe(() => { throw new Error("boom"); });
     const good = subscribe(() => { heard += 1; });
-    expect(() => writeAttempt(7n, "commit", "pending", 1000)).not.toThrow();
+    expect(() => writeAttempt(7n, "commit", "holder", "pending", 1000)).not.toThrow();
     expect(heard).toBe(1);
     bad();
     good();
@@ -385,8 +405,8 @@ describe("an orphaned sink proposal", () => {
   const NEW_SINK = "0xDDddDDddDDddDDddDDddDDddDDddDDddDDddDDdd";
 
   const start = (target: string) => {
-    writeAttempt(base.match_id, "propose_sink", "pending", 1000);
-    noteSinkTarget(base.match_id, "propose_sink", target);
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
+    noteSinkTarget(base.match_id, "propose_sink", "holder", target);
   };
 
   it("clears once pending_sink holds the proposed address", () => {
@@ -394,48 +414,48 @@ describe("an orphaned sink proposal", () => {
 
     // Nothing pending yet, so the proposal has not landed.
     reconcileSinkProposal(base);
-    expect(readAttempt(base.match_id, "propose_sink")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "propose_sink", "holder")?.outcome).toBe("pending");
 
     reconcileSinkProposal({ ...base, pending_sink: NEW_SINK });
-    expect(readAttempt(base.match_id, "propose_sink")).toBeNull();
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
   });
 
   it("matches the address whatever case it was typed in", () => {
     start(NEW_SINK.toLowerCase());
     reconcileSinkProposal({ ...base, pending_sink: NEW_SINK.toUpperCase() });
-    expect(readAttempt(base.match_id, "propose_sink")).toBeNull();
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
   });
 
   it("does not clear on somebody else's pending address", () => {
     start(NEW_SINK);
     reconcileSinkProposal({ ...base, pending_sink: BUYER });
-    expect(readAttempt(base.match_id, "propose_sink")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "propose_sink", "holder")?.outcome).toBe("pending");
   });
 
   it("treats a cancel as landed when pending_sink goes back to zero", () => {
     // Proposing the zero address cancels a pending handover. Same comparison.
     const pending = { ...base, pending_sink: NEW_SINK };
-    writeAttempt(base.match_id, "propose_sink", "pending", 1000);
-    noteSinkTarget(base.match_id, "propose_sink", ZERO_ADDRESS);
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
+    noteSinkTarget(base.match_id, "propose_sink", "holder", ZERO_ADDRESS);
 
     reconcileSinkProposal(pending);
-    expect(readAttempt(base.match_id, "propose_sink")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "propose_sink", "holder")?.outcome).toBe("pending");
 
     reconcileSinkProposal({ ...base, pending_sink: ZERO_ADDRESS });
-    expect(readAttempt(base.match_id, "propose_sink")).toBeNull();
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
   });
 
   it("keeps a proposal with no recorded address rather than guessing", () => {
-    writeAttempt(base.match_id, "propose_sink", "pending", 1000);
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
     reconcileSinkProposal({ ...base, pending_sink: NEW_SINK });
-    expect(readAttempt(base.match_id, "propose_sink")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "propose_sink", "holder")?.outcome).toBe("pending");
   });
 
   it("keeps the hash and the start time when the address is stamped on", () => {
-    writeAttempt(base.match_id, "propose_sink", "pending", 1000);
-    noteHash(base.match_id, "propose_sink", HASH);
-    noteSinkTarget(base.match_id, "propose_sink", NEW_SINK);
-    const rec = readAttempt(base.match_id, "propose_sink");
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
+    noteHash(base.match_id, "propose_sink", "holder", HASH);
+    noteSinkTarget(base.match_id, "propose_sink", "holder", NEW_SINK);
+    const rec = readAttempt(base.match_id, "propose_sink", "holder");
     expect(rec?.hash).toBe(HASH);
     expect(rec?.targetSink).toBe(NEW_SINK);
     expect(rec?.startedAt).toBe(1000);
@@ -446,7 +466,7 @@ describe("an orphaned sink proposal", () => {
     // pending_sink is global contract state, so a different match answers too.
     const elsewhere = { ...base, match_id: 9n, pending_sink: NEW_SINK };
     reconcileAll([elsewhere, { ...base, pending_sink: NEW_SINK }], HOLDER, 9);
-    expect(readAttempt(base.match_id, "propose_sink")).toBeNull();
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
   });
 });
 
@@ -454,32 +474,32 @@ describe("closing propose_sink left everything else alone", () => {
   const NEW_SINK = "0xDDddDDddDDddDDddDDddDDddDDddDDddDDddDDdd";
 
   it("does not touch another action's record on the same match", () => {
-    writeAttempt(base.match_id, "propose_sink", "pending", 1000);
-    noteSinkTarget(base.match_id, "propose_sink", NEW_SINK);
-    writeAttempt(base.match_id, "reveal", "pending", 1000);
-    writeAttempt(base.match_id, "accept_sink", "pending", 1000);
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
+    noteSinkTarget(base.match_id, "propose_sink", "holder", NEW_SINK);
+    writeAttempt(base.match_id, "reveal", "holder", "pending", 1000);
+    writeAttempt(base.match_id, "accept_sink", "holder", "pending", 1000);
 
     reconcileSinkProposal({ ...base, pending_sink: NEW_SINK });
 
-    expect(readAttempt(base.match_id, "propose_sink")).toBeNull();
-    expect(readAttempt(base.match_id, "reveal")?.outcome).toBe("pending");
-    expect(readAttempt(base.match_id, "accept_sink")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
+    expect(readAttempt(base.match_id, "reveal", "holder")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "accept_sink", "holder")?.outcome).toBe("pending");
   });
 
   it("leaves create_match reconciliation exactly as it was", () => {
-    writeAttempt(CREATE_KEY_ID, "create_match", "pending", 1000);
-    noteTarget(CREATE_KEY_ID, "create_match", 6);
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
+    noteTarget(CREATE_KEY_ID, "create_match", "holder", 6);
     // A sink proposal landing must not retire a create, and vice versa.
     reconcileSinkProposal({ ...base, pending_sink: NEW_SINK });
-    expect(readAttempt(CREATE_KEY_ID, "create_match")?.outcome).toBe("pending");
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")?.outcome).toBe("pending");
     reconcileCreate(6);
-    expect(readAttempt(CREATE_KEY_ID, "create_match")).toBeNull();
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")).toBeNull();
   });
 
   it("still clears accept_sink through the postcondition it always used", () => {
-    writeAttempt(base.match_id, "accept_sink", "pending", 1000);
+    writeAttempt(base.match_id, "accept_sink", "holder", "pending", 1000);
     reconcile({ ...base, pending_sink: ZERO_ADDRESS }, "holder");
-    expect(readAttempt(base.match_id, "accept_sink")).toBeNull();
+    expect(readAttempt(base.match_id, "accept_sink", "holder")).toBeNull();
   });
 });
 
@@ -519,10 +539,10 @@ describe("the criterion is the same one it always was", () => {
   ] as const;
 
   const seed = () => {
-    for (const id of flow) writeAttempt(base.match_id, id, "pending", 1000);
+    for (const id of flow) writeAttempt(base.match_id, id, "holder", "pending", 1000);
   };
   const survivors = () =>
-    flow.filter((id) => readAttempt(base.match_id, id) !== null);
+    flow.filter((id) => readAttempt(base.match_id, id, "holder") !== null);
 
   it("retires the same actions through the sweep as through reconcile", () => {
     seed();
@@ -563,10 +583,120 @@ describe("the criterion is the same one it always was", () => {
     installStorage();
     // The holder played every step. A wallet sitting in the buyer seat has
     // landed nothing, and the sweep must read it that way.
-    writeAttempt(base.match_id, "commit", "pending", 1000);
-    writeAttempt(base.match_id, "reveal", "pending", 1000);
+    writeAttempt(base.match_id, "commit", "holder", "pending", 1000);
+    writeAttempt(base.match_id, "reveal", "holder", "pending", 1000);
     reconcileAll([{ ...played, buyer_committed: false }], BUYER, 7);
-    expect(readAttempt(base.match_id, "commit")?.outcome).toBe("pending");
-    expect(readAttempt(base.match_id, "reveal")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "commit", "holder")?.outcome).toBe("pending");
+    expect(readAttempt(base.match_id, "reveal", "holder")?.outcome).toBe("pending");
+  });
+});
+
+/* ---------- one person, both wallets ------------------------------------ */
+
+/**
+ * The flow the README prescribes: two seats, two wallets, one browser, the
+ * same person switching accounts between turns.
+ *
+ * Records used to be keyed by match and action only, so the two seats of one
+ * match shared one. These are the two failures that followed, written as the
+ * sequence that produced them.
+ */
+describe("two seats of one match do not share a record", () => {
+  it("does not seed the buyer's panel from the holder's pending commit", () => {
+    // The holder signs a commit. The record goes down as pending, with the
+    // holder's hash on it.
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    noteHash(7n, "commit", "holder", HASH);
+
+    // Before it confirms, the user switches to the buyer's wallet and the
+    // buyer's CommitPanel mounts. resumable() reads exactly this, and a
+    // non-null answer is what hid the buyer's form behind an in-flight notice
+    // for a transaction the buyer never signed.
+    expect(readAttempt(7n, "commit", "buyer")).toBeNull();
+
+    // The holder's own record is untouched: it is still being watched.
+    expect(readAttempt(7n, "commit", "holder")?.outcome).toBe("pending");
+    expect(readAttempt(7n, "commit", "holder")?.hash).toBe(HASH);
+  });
+
+  it("does not clear the buyer's live commit when the sweep runs as holder", () => {
+    // The buyer signs a commit and it is still in flight.
+    writeAttempt(7n, "commit", "buyer", "pending", 1000);
+
+    // The user switches to the holder's wallet. The app-level sweep runs on
+    // every route, and the holder has already committed, so the holder's
+    // postcondition holds. Against a shared record that cleared the buyer's
+    // live attempt and re-enabled the button under a broadcast transaction.
+    const m = { ...base, match_id: 7n, holder_committed: true, buyer_committed: false };
+    reconcileAll([m], HOLDER, 7);
+
+    expect(readAttempt(7n, "commit", "buyer")?.outcome).toBe("pending");
+  });
+
+  it("still clears each seat's record on its own postcondition", () => {
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    writeAttempt(7n, "commit", "buyer", "pending", 1000);
+    const onlyHolder = { ...base, match_id: 7n, holder_committed: true, buyer_committed: false };
+
+    reconcileAll([onlyHolder], HOLDER, 7);
+    expect(readAttempt(7n, "commit", "holder")).toBeNull();
+    expect(readAttempt(7n, "commit", "buyer")?.outcome).toBe("pending");
+
+    const bothIn = { ...onlyHolder, buyer_committed: true };
+    reconcileAll([bothIn], BUYER, 7);
+    expect(readAttempt(7n, "commit", "buyer")).toBeNull();
+  });
+
+  it("keeps one shared record for an action both seats answer the same way", () => {
+    // adjudicate is permissionless and its postcondition is a match-level
+    // flag, so a single record is correct: either wallet's sweep retires it.
+    writeAttempt(7n, "adjudicate", "holder", "pending", 1000);
+    expect(readAttempt(7n, "adjudicate", "buyer")?.outcome).toBe("pending");
+    expect(readAttempt(7n, "adjudicate", "buyer")?.seat).toBe("any");
+  });
+});
+
+describe("the sweep skips a wallet with no seat", () => {
+  it("leaves a seat's record alone when an outsider sweeps", () => {
+    writeAttempt(7n, "commit", "holder", "pending", 1000);
+    // OUTSIDER is neither seat. It used to be defaulted to holder, which read
+    // the holder's postcondition and retired a record it had no claim on.
+    reconcileAll([{ ...base, match_id: 7n, holder_committed: true }], OUTSIDER, 7);
+    expect(readAttempt(7n, "commit", "holder")?.outcome).toBe("pending");
+  });
+
+  it("still reconciles a sink proposal for a wallet with no seat", () => {
+    // The sink is normally an observer in every match, so skipping the seat
+    // sweep must not take the sink's own reconciliation with it.
+    const NEW_SINK = "0xDDddDDddDDddDDddDDddDDddDDddDDddDDddDDdd";
+    writeAttempt(base.match_id, "propose_sink", "holder", "pending", 1000);
+    noteSinkTarget(base.match_id, "propose_sink", "holder", NEW_SINK);
+    reconcileAll([{ ...base, pending_sink: NEW_SINK }], OUTSIDER, 7);
+    expect(readAttempt(base.match_id, "propose_sink", "holder")).toBeNull();
+  });
+
+  it("still reconciles a create for a wallet with no seat", () => {
+    writeAttempt(CREATE_KEY_ID, "create_match", "holder", "pending", 1000);
+    noteTarget(CREATE_KEY_ID, "create_match", "holder", 6);
+    reconcileAll([], OUTSIDER, 6);
+    expect(readAttempt(CREATE_KEY_ID, "create_match", "holder")).toBeNull();
+  });
+});
+
+describe("the key is namespaced by contract", () => {
+  it("ignores a record written under the old un-suffixed key", () => {
+    // A redeploy mints its own ids from one. This is what a record from the
+    // previous contract's match 1 looks like in a browser that has not been
+    // cleared; it must not be picked up as this contract's match 1.
+    localStorage.setItem(
+      "carnage.attempt.1.commit",
+      JSON.stringify({ actionId: "commit", startedAt: 1000, outcome: "pending" }),
+    );
+    expect(readAttempt(1n, "commit", "holder")).toBeNull();
+  });
+
+  it("writes under the contract this build talks to", () => {
+    writeAttempt(1n, "commit", "holder", "pending", 1000);
+    expect(localStorage.getItem(keyFor("1", "commit", "holder"))).not.toBeNull();
   });
 });

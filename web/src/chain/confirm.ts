@@ -22,6 +22,14 @@ import type { ActionId, Role } from "./roles";
 export type Confirmation = {
   actionId: ActionId;
   /**
+   * The seat this confirmation was built for.
+   *
+   * `landed` is already per-role for the seat-scoped actions, so the journal
+   * needs the same role to key the record it writes. Carrying it here keeps
+   * useAction from having to be told twice.
+   */
+  role: Role;
+  /**
    * The state change this action exists to produce.
    *
    * Absent only for create_match, which proves its own outcome by scanning
@@ -75,6 +83,7 @@ const JURY_POLL_MS = 8_000;
 export function confirmationFor(id: ActionId, role: Role): Confirmation {
   const base = {
     actionId: id,
+    role,
     windowMs: FAST_WINDOW_MS,
     pollMs: FAST_POLL_MS,
     discardedNote: DISCARDED_NOTE,
@@ -146,6 +155,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
     case "adjudicate":
       return {
         actionId: id,
+        role,
         windowMs: JURY_WINDOW_MS,
         pollMs: JURY_POLL_MS,
         // The one action that hits this regularly. adjudicate is the only
@@ -172,6 +182,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
       // released later, on finalization, and is reported separately.
       return {
         actionId: id,
+        role,
         windowMs: 120_000,
         pollMs: FAST_POLL_MS,
         discardedNote: DISCARDED_NOTE,
@@ -186,6 +197,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
       // Same call as claim, watching the sink's balance instead of a seat's.
       return {
         actionId: id,
+        role,
         windowMs: 120_000,
         pollMs: FAST_POLL_MS,
         discardedNote: DISCARDED_NOTE,

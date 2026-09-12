@@ -1,3 +1,4 @@
+import { CARNAGE_ADDRESS } from "./client";
 import { confirmationFor } from "./confirm";
 import type { MatchState } from "./contract";
 import { ACTION_IDS, seatOf, type ActionId, type Role } from "./roles";
@@ -31,6 +32,13 @@ export type AttemptOutcome = "pending" | "confirmed" | "unconfirmed" | "failed";
 
 export type Attempt = {
   actionId: ActionId;
+  /**
+   * Whose record this is: the same segment the key uses, so the two cannot
+   * disagree. A seat-scoped action stores its role; everything else stores
+   * SHARED_SEAT. Written so a record found in devtools says whose attempt it
+   * describes without anyone decoding the key.
+   */
+  seat: Role | typeof SHARED_SEAT;
   /** Epoch ms at which the attempt was submitted. */
   startedAt: number;
   outcome: AttemptOutcome;
@@ -115,14 +123,72 @@ try {
 }
 
 
-function key(matchId: bigint | number, actionId: ActionId): string {
-  return `${PREFIX}.${matchId}.${actionId}`;
+/**
+ * Actions whose postcondition reads one seat's own flags.
+ *
+ * These are the ones that must not share a record. confirmationFor builds
+ * `landed` per role for each of them, so one record per (match, action) meant
+ * the two seats of a match collided, and the collision was reachable in the
+ * flow the README prescribes: one person holding both wallets and switching
+ * accounts between turns. Two things went wrong. A pending holder record
+ * seeded the buyer's panel with an in-flight notice and hid the buyer's form;
+ * and reconcileAll, sweeping with whichever wallet happened to be connected,
+ * evaluated the other seat's postcondition against the shared record and
+ * cleared a live attempt, re-enabling a button under a broadcast transaction.
+ */
+const SEAT_SCOPED = new Set<ActionId>([
+  "commit",
+  "fund",
+  "anchor_claim",
+  "propose_price",
+  "reveal",
+  "claim",
+]);
+
+/**
+ * The segment for every action that is not seat-scoped.
+ *
+ * create_match has no match and no seat; adjudicate, refund_before_lock and
+ * force_settle are permissionless and answered by match-level flags;
+ * claim_sink, propose_sink and accept_sink are answered by the sink's own
+ * state. All of them read the same for both seats, so one shared record is
+ * correct and lets a sweep from either wallet retire it. That matters for the
+ * sink in particular, which is normally not a seat in any match.
+ */
+const SHARED_SEAT = "any";
+
+/** The role argument for an action that is not seat-scoped. Never reaches a key. */
+const SHARED: Role = "holder";
+
+function seatSegment(actionId: ActionId, role: Role): Role | typeof SHARED_SEAT {
+  return SEAT_SCOPED.has(actionId) ? role : SHARED_SEAT;
+}
+
+/**
+ * Namespaced by contract as well as by match, seat and action.
+ *
+ * Every other persistent key in the codebase carries the contract address
+ * (discovery.ts, txlog.ts, grace.ts) and this one did not. A redeploy mints
+ * its own ids from one, so without it a stale record from the old contract's
+ * match 1 was picked up as the new contract's match 1.
+ *
+ * Records written under the old un-suffixed key are simply never read again.
+ * There is no migration on purpose: they are attempts against a contract this
+ * build no longer talks to, and they expire unread.
+ */
+function key(matchId: bigint | number, actionId: ActionId, role: Role): string {
+  const seat = seatSegment(actionId, role);
+  return `${PREFIX}.${CARNAGE_ADDRESS.toLowerCase()}.${matchId}.${actionId}.${seat}`;
 }
 
 /** Storage can be unavailable (private mode, disabled cookies). Never throw. */
-export function readAttempt(matchId: bigint | number, actionId: ActionId): Attempt | null {
+export function readAttempt(
+  matchId: bigint | number,
+  actionId: ActionId,
+  role: Role,
+): Attempt | null {
   try {
-    const raw = localStorage.getItem(key(matchId, actionId));
+    const raw = localStorage.getItem(key(matchId, actionId, role));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Attempt;
     if (typeof parsed?.startedAt !== "number") return null;
@@ -141,13 +207,20 @@ export function readAttempt(matchId: bigint | number, actionId: ActionId): Attem
 export function writeAttempt(
   matchId: bigint | number,
   actionId: ActionId,
+  role: Role,
   outcome: AttemptOutcome,
   startedAt = Date.now(),
   hash?: string,
 ): void {
   try {
-    const record: Attempt = { actionId, startedAt, outcome, ...(hash ? { hash } : {}) };
-    localStorage.setItem(key(matchId, actionId), JSON.stringify(record));
+    const record: Attempt = {
+      actionId,
+      seat: seatSegment(actionId, role),
+      startedAt,
+      outcome,
+      ...(hash ? { hash } : {}),
+    };
+    localStorage.setItem(key(matchId, actionId, role), JSON.stringify(record));
   } catch {
     // Recovery still works within the session; only the reload path is lost.
   }
@@ -164,12 +237,13 @@ export function writeAttempt(
 export function noteHash(
   matchId: bigint | number,
   actionId: ActionId,
+  role: Role,
   hash: string,
 ): void {
-  const prior = readAttempt(matchId, actionId);
+  const prior = readAttempt(matchId, actionId, role);
   if (!prior) return;
   try {
-    localStorage.setItem(key(matchId, actionId), JSON.stringify({ ...prior, hash }));
+    localStorage.setItem(key(matchId, actionId, role), JSON.stringify({ ...prior, hash }));
   } catch {
     // The attempt is still on record, just without its link.
   }
@@ -185,12 +259,13 @@ export function noteHash(
 export function noteTarget(
   matchId: bigint | number,
   actionId: ActionId,
+  role: Role,
   target: number,
 ): void {
-  const prior = readAttempt(matchId, actionId);
+  const prior = readAttempt(matchId, actionId, role);
   if (!prior) return;
   try {
-    localStorage.setItem(key(matchId, actionId), JSON.stringify({ ...prior, target }));
+    localStorage.setItem(key(matchId, actionId, role), JSON.stringify({ ...prior, target }));
   } catch {
     // Without it the create falls back to clearing when its panel finishes.
   }
@@ -206,21 +281,26 @@ export function noteTarget(
 export function noteSinkTarget(
   matchId: bigint | number,
   actionId: ActionId,
+  role: Role,
   targetSink: string,
 ): void {
-  const prior = readAttempt(matchId, actionId);
+  const prior = readAttempt(matchId, actionId, role);
   if (!prior) return;
   try {
-    localStorage.setItem(key(matchId, actionId), JSON.stringify({ ...prior, targetSink }));
+    localStorage.setItem(key(matchId, actionId, role), JSON.stringify({ ...prior, targetSink }));
   } catch {
     // Without it the proposal falls back to clearing when its panel finishes.
   }
   announce();
 }
 
-export function clearAttempt(matchId: bigint | number, actionId: ActionId): void {
+export function clearAttempt(
+  matchId: bigint | number,
+  actionId: ActionId,
+  role: Role,
+): void {
   try {
-    localStorage.removeItem(key(matchId, actionId));
+    localStorage.removeItem(key(matchId, actionId, role));
   } catch {
     // Nothing to do.
   }
@@ -243,11 +323,11 @@ export function clearAttempt(matchId: bigint | number, actionId: ActionId): void
 export function reconcile(m: MatchState, role: Role): void {
   let changed = false;
   for (const id of ACTION_IDS) {
-    const prior = readAttempt(m.match_id, id);
+    const prior = readAttempt(m.match_id, id, role);
     if (!prior) continue;
     const landed = confirmationFor(id, role).landed;
     if (landed && landed(m)) {
-      clearAttempt(m.match_id, id);
+      clearAttempt(m.match_id, id, role);
       changed = true;
     }
   }
@@ -268,11 +348,12 @@ export function reconcile(m: MatchState, role: Role): void {
  * true at exactly the same moment: acceptance.
  */
 export function reconcileCreate(scannedTo: number): void {
-  const prior = readAttempt(CREATE_KEY_ID, "create_match");
+  // create_match is not seat-scoped, so SHARED never reaches the key.
+  const prior = readAttempt(CREATE_KEY_ID, "create_match", SHARED);
   if (!prior) return;
   if (typeof prior.target !== "number") return;
   if (scannedTo < prior.target) return;
-  clearAttempt(CREATE_KEY_ID, "create_match");
+  clearAttempt(CREATE_KEY_ID, "create_match", SHARED);
 }
 
 /**
@@ -289,11 +370,12 @@ export function reconcileCreate(scannedTo: number): void {
  * there is nothing to wait for.
  */
 export function reconcileSinkProposal(m: MatchState): void {
-  const prior = readAttempt(m.match_id, "propose_sink");
+  // propose_sink is not seat-scoped either: the sink is normally an observer.
+  const prior = readAttempt(m.match_id, "propose_sink", SHARED);
   if (!prior) return;
   if (typeof prior.targetSink !== "string") return;
   if (m.pending_sink.toLowerCase() !== prior.targetSink.toLowerCase()) return;
-  clearAttempt(m.match_id, "propose_sink");
+  clearAttempt(m.match_id, "propose_sink", SHARED);
 }
 
 /**
@@ -318,7 +400,14 @@ export function reconcileAll(
 ): void {
   for (const m of matches) {
     const seat = seatOf(m, wallet);
-    reconcile(m, seat === "buyer" ? "buyer" : "holder");
+    // Skipped, not defaulted to holder. Only a seat writes a seat-scoped
+    // record, and reading one under the wrong seat is exactly what used to
+    // clear a live attempt: an observer swept as the holder and retired the
+    // buyer's pending commit the moment the holder's had landed.
+    if (seat !== "observer") reconcile(m, seat);
+    // Runs whatever the seat is. pending_sink is contract-level state that any
+    // match answers for, and the wallet holding the sink is normally an
+    // observer in every match, so gating this on a seat would strand it.
     reconcileSinkProposal(m);
   }
   reconcileCreate(scannedTo);

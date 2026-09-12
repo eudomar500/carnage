@@ -108,7 +108,7 @@ const TX_CHECK_MS = 10_000;
  * their commit failed and send it again.
  */
 function resumable(opts: ActionOptions): Attempt | null {
-  const prior = readAttempt(opts.matchId, opts.confirm.actionId);
+  const prior = readAttempt(opts.matchId, opts.confirm.actionId, opts.confirm.role);
   if (!prior || prior.outcome !== "pending") return null;
   if (Date.now() - prior.startedAt >= RESUME_BUDGET_MS) return null;
   return prior;
@@ -293,7 +293,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
    */
   const markDiscarded = useCallback(
     (c: Confirmation, matchId: bigint | number) => {
-      clearAttempt(matchId, c.actionId);
+      clearAttempt(matchId, c.actionId, c.role);
       setInFlight(null);
       set({
         kind: "discarded",
@@ -316,7 +316,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
       const outcome = await awaitLanding(c, Date.now() + c.windowMs, mine);
       if (!mine()) return;
       if (outcome === "landed") {
-        clearAttempt(matchId, c.actionId);
+        clearAttempt(matchId, c.actionId, c.role);
         setInFlight(null);
         set({ kind: "confirmed", note: successNote });
         return;
@@ -325,7 +325,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         markDiscarded(c, matchId);
         return;
       }
-      writeAttempt(matchId, c.actionId, "unconfirmed", undefined, hashRef.current ?? undefined);
+      writeAttempt(matchId, c.actionId, c.role, "unconfirmed", undefined, hashRef.current ?? undefined);
       set({ kind: "unconfirmed", note: c.unconfirmedNote, retryLabel: c.retryLabel });
     },
     [awaitLanding, markDiscarded, set],
@@ -352,7 +352,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
       const sent = (h: string) => {
         if (gen.current !== myGen) return;
         hashRef.current = h;
-        noteHash(matchId, confirm.actionId, h);
+        noteHash(matchId, confirm.actionId, confirm.role, h);
         if (alive.current) setHash(h);
       };
 
@@ -364,13 +364,13 @@ export function useAction(opts: ActionOptions): ActionRunner {
           const before = await readState();
           if (!mine()) return;
           if (before && confirm.landed(before)) {
-            clearAttempt(matchId, confirm.actionId);
+            clearAttempt(matchId, confirm.actionId, confirm.role);
             set({ kind: "confirmed", note: `${confirm.confirmedNote} (already on-chain)` });
             return;
           }
         }
 
-        writeAttempt(matchId, confirm.actionId, "pending");
+        writeAttempt(matchId, confirm.actionId, confirm.role, "pending");
 
         let note: string;
         try {
@@ -385,7 +385,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
           if (failure.nothingSent || !confirm.landed) {
             // Nothing reached the network, so there is no attempt to recover
             // and no reason for the next page load to say there is.
-            clearAttempt(matchId, confirm.actionId);
+            clearAttempt(matchId, confirm.actionId, confirm.role);
             set({ kind: "failed", note: failure.message, retryLabel: confirm.retryLabel });
             return;
           }
@@ -424,7 +424,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
     const { matchId, confirm } = latest.current;
     if (!confirm.landed) return;
 
-    const prior = readAttempt(matchId, confirm.actionId);
+    const prior = readAttempt(matchId, confirm.actionId, confirm.role);
     if (!prior || prior.outcome === "confirmed") return;
 
     // The watch below asks the transaction for its own status, so it needs the
@@ -446,7 +446,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         const now = await readState();
         if (!mine()) return;
         if (now && confirm.landed!(now)) {
-          clearAttempt(matchId, confirm.actionId);
+          clearAttempt(matchId, confirm.actionId, confirm.role);
           setInFlight(null);
           set({ kind: "confirmed", note: confirm.confirmedNote });
           return;
@@ -468,7 +468,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
           const outcome = await awaitLanding(confirm, prior.startedAt + RESUME_BUDGET_MS, mine);
           if (!mine()) return;
           if (outcome === "landed") {
-            clearAttempt(matchId, confirm.actionId);
+            clearAttempt(matchId, confirm.actionId, confirm.role);
             setInFlight(null);
             set({ kind: "confirmed", note: confirm.confirmedNote });
             return;
@@ -479,7 +479,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
           }
         }
 
-        writeAttempt(matchId, confirm.actionId, "unconfirmed", prior.startedAt, prior.hash);
+        writeAttempt(matchId, confirm.actionId, confirm.role, "unconfirmed", prior.startedAt, prior.hash);
         setInFlight(null);
         set({ kind: "unconfirmed", note: confirm.unconfirmedNote, retryLabel: confirm.retryLabel });
       } finally {
@@ -524,7 +524,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
         if (driving() && ownerKind.current === "send") return;
         if (!inFlightRef.current) return;
         const { matchId, confirm } = latest.current;
-        if (readAttempt(matchId, confirm.actionId)) return;
+        if (readAttempt(matchId, confirm.actionId, confirm.role)) return;
         // Supersede any watch still polling for the attempt that just went.
         gen.current += 1;
         inFlightRef.current = null;
@@ -551,7 +551,7 @@ export function useAction(opts: ActionOptions): ActionRunner {
     owner.current = 0;
     ownerKind.current = null;
     hashRef.current = null;
-    clearAttempt(matchId, confirm.actionId);
+    clearAttempt(matchId, confirm.actionId, confirm.role);
     setInFlight(null);
     setHash(null);
     set({ kind: "unconfirmed", note: confirm.unconfirmedNote, retryLabel: confirm.retryLabel });

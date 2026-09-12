@@ -66,7 +66,9 @@ export default function CreatePanel({ wallet, onCreated, lede = DEFAULT_LEDE }: 
           // Written before the send, so a tab that navigates away mid-create
           // still leaves the sweep something it can recognise as landed.
           onPredicted: (id) =>
-            noteTarget(CREATE_KEY_ID, "create_match", Number(id)),
+            // create_match is not seat-scoped, so the seat segment is fixed
+            // and the role passed here never reaches the key.
+            noteTarget(CREATE_KEY_ID, "create_match", "holder", Number(id)),
         },
       );
       onCreated(res.matchId);

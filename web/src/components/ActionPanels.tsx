@@ -643,7 +643,8 @@ export function SinkTransferPanel({ wallet, match, role, refresh }: PanelProps) 
       const target = next.trim();
       // Written before the send, so a tab that navigates away mid-proposal
       // still leaves the app-level sweep something it can recognise as landed.
-      noteSinkTarget(match.match_id, "propose_sink", target);
+      // propose_sink is not seat-scoped either; the role is inert in the key.
+      noteSinkTarget(match.match_id, "propose_sink", role, target);
       say("simulating, then confirm the transaction in your wallet...");
       await proposeSinkAddress(wallet, target, { onSubmitted: sent });
       return "proposal recorded";
