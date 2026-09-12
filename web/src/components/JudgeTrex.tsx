@@ -16,6 +16,11 @@ export type BiteSide = "holder" | "buyer" | null;
  * fetched at the moment the jaws open would flash a gap on the first bite, and
  * a hidden image costs one request on a page that is already fetching the
  * closed frame from the same directory.
+ *
+ * The pair sits in its own box so the vignette mask can be applied once, to
+ * the two of them together. Masking each frame instead made the falloff add up
+ * wherever both were painted, which is a dark ring around the head for the
+ * length of a cross-fade.
  */
 export default function JudgeTrex({
   mood,
@@ -33,14 +38,16 @@ export default function JudgeTrex({
       className={`judge judge--${mood}${biteClass}`}
       key={isStrike(mood) ? strikeKey : undefined}
     >
-      <img className="judge-img" src={asset("assets/trex-central.webp")} alt="" draggable={false} />
-      <img
-        className="judge-img judge-img--open"
-        src={asset("assets/trex-central-open.webp")}
-        alt=""
-        aria-hidden="true"
-        draggable={false}
-      />
+      <span className="judge-frames">
+        <img className="judge-img" src={asset("assets/trex-central.webp")} alt="" draggable={false} />
+        <img
+          className="judge-img judge-img--open"
+          src={asset("assets/trex-central-open.webp")}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+      </span>
       <span className="judge-eye" aria-hidden="true" />
       <span className="judge-eye-flare" aria-hidden="true" />
     </div>

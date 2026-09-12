@@ -36,13 +36,23 @@ export type MatchAppProps = {
 };
 
 /*
- * One bite, end to end: turn toward the card, jaws open, the card travels into
- * the mouth and holds there, jaws close with a jerk, a beat, and the card is
- * back chewed. Kept under two seconds a card so a both-adverse settlement does
- * not hold the screen. The same figures drive --bite-ms in styles.css.
+ * The reaction, in two phases.
+ *
+ * The threat runs once for the whole settlement: the judge opens its jaws at
+ * centre, holds, and closes them again, aimed at nobody. Then one strike per
+ * slashed card, mouth shut, turning to the card and hitting its near edge. Two
+ * adverse labels are one threat and two strikes, 3300 ms end to end, rather
+ * than the same jaws opening twice.
+ *
+ * The gap is what keeps the phases apart: the threat's jaws finish closing at
+ * the end of --threat-ms, and the first strike starts a further 150 ms later,
+ * so the head never moves while the two frames are mid-cross-fade.
+ *
+ * The same figures drive --threat-ms and --strike-ms in styles.css.
  */
-const BITE_MS = 1210;
-const BITE_GAP_MS = 120;
+const THREAT_MS = 1200;
+const STRIKE_MS = 900;
+const PHASE_GAP_MS = 150;
 
 /*
  * Development-only replay switch.
@@ -102,6 +112,7 @@ export default function MatchApp({
   // The seat in the jaws right now, and the seats still owed a bite. A card is
   // drawn chewed once it is in neither: on a reload of a settled match both are
   // empty from the start, so the chewed state is there without the sequence.
+  const [threat, setThreat] = useState(false);
   const [biting, setBiting] = useState<BiteSide>(null);
   const [queued, setQueued] = useState<Role[]>([]);
   const biteTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -127,11 +138,17 @@ export default function MatchApp({
       if (reduced || seats.length === 0) {
         setQueued([]);
         setBiting(null);
+        setThreat(false);
         return;
       }
 
+      // The cards stay whole through the threat: a seat still in the queue has
+      // not been hit yet, which is what holds its chewed state back.
       setQueued(seats);
-      let at = 0;
+      setThreat(true);
+      biteTimers.current.push(setTimeout(() => setThreat(false), THREAT_MS));
+
+      let at = THREAT_MS + PHASE_GAP_MS;
       for (const seat of seats) {
         const start = at;
         biteTimers.current.push(setTimeout(() => setBiting(seat), start));
@@ -139,9 +156,9 @@ export default function MatchApp({
           setTimeout(() => {
             setBiting(null);
             setQueued((rest) => rest.filter((s) => s !== seat));
-          }, start + BITE_MS),
+          }, start + STRIKE_MS),
         );
-        at += BITE_MS + BITE_GAP_MS;
+        at += STRIKE_MS + PHASE_GAP_MS;
       }
     },
     [clearBiteTimers],
@@ -200,7 +217,14 @@ export default function MatchApp({
    * strike animation still works, and the nav is never conditional.
    */
   const shell = (body: ReactNode) => (
-    <div className={`stage stage--${mood}${reacting ? " stage--reacting" : ""}`} id="top">
+    <div
+      className={
+        `stage stage--${mood}` +
+        (reacting ? " stage--reacting" : "") +
+        (threat ? " stage--threat" : "")
+      }
+      id="top"
+    >
       <div className="flash-layer" aria-hidden="true" />
       {import.meta.env.DEV && preview ? (
         <div className="preview-bar">
