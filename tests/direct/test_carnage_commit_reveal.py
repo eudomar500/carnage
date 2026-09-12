@@ -412,3 +412,42 @@ def test_commitment_hash_is_genuine_keccak256(direct_vm, direct_deploy, direct_a
     expected = "0x" + Web3.keccak(preimage).hex()
 
     assert onchain == expected
+
+
+# ---- cross-language vector ---------------------------------------------------
+
+# One fixed (state, salt, match_id, agent) and the digest it must produce.
+#
+# The same vector and the same literal are asserted against the TypeScript
+# implementation in web/src/chain/actions.test.ts. computeCommitment there is a
+# second implementation of compute_commitment here, in another language, and
+# nothing else forces the two to agree. If either drifts by a byte, a commit
+# made in the browser produces a hash no reveal can ever open, and the stake is
+# recoverable only through resolve_no_reveal after the deadline. The failure is
+# invisible until somebody has already committed and funded, so it is pinned on
+# both sides rather than tested once on either.
+#
+# The salt is 16 bytes, MIN_SALT_BYTES, so the vector sits on the lower bound.
+VECTOR_STATE = 650
+VECTOR_SALT = "0x" + "ab" * 16
+VECTOR_MATCH_ID = 7
+VECTOR_AGENT_HEX = "a1" * 20
+VECTOR_DIGEST = "0xad3bc4e9ebfb770c122e60f19a685812cbdfb9d8bd90279519adf997c9440a1a"
+
+
+def test_compute_commitment_matches_the_published_vector(direct_vm, direct_deploy, direct_alice, direct_bob, direct_owner):
+    contract = direct_deploy("contracts/carnage.py")
+    # Imported after the deploy, not at the top: genlayer is not on sys.path
+    # until the first direct_deploy() in a test. Same reason conftest._addr
+    # defers it.
+    from genlayer.py.types import Address
+
+    # compute_commitment reads no match state, so the vector's match_id does
+    # not have to name a match that exists. Keeping it a literal is the point.
+    agent = Address(bytes.fromhex(VECTOR_AGENT_HEX))
+
+    onchain = contract.compute_commitment(
+        VECTOR_STATE, VECTOR_SALT, VECTOR_MATCH_ID, agent
+    )
+
+    assert onchain == VECTOR_DIGEST
