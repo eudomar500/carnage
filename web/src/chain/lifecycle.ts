@@ -82,7 +82,7 @@ export const BEATS: Beat[] = [
     venue: "ON-CHAIN",
     who: "holder and buyer, each from their own wallet",
     methods: ["anchor_claim_holder", "anchor_claim_buyer"],
-    what: "Each side records the natural-language claim the jury will judge. The claim is bound to this match, so it cannot be replayed elsewhere, and it is stored before anyone reveals anything.",
+    what: "Each side records the natural-language claim the jury will judge. The claim is stored on this match, and it lands before anyone reveals anything. Resistance to replay into another match is the commitment's guarantee: match_id and the address sit inside its preimage.",
     gate: "both sides must have funded, and each side may anchor once",
     done: (m) => m.holder_claimed && m.buyer_claimed,
   },
@@ -183,7 +183,10 @@ export const BRANCHES: Branch[] = [
     title: "INCONCLUSIVE",
     method: "resolve_inconclusive",
     when: "both sides revealed, but inconclusive_deadline passes with the match still unadjudicated",
-    outcome: "If the jury genuinely cannot decide, nobody is punished. Each side gets its own stake back as a claimable credit: no slash, no transfer to the counterparty, nothing to the sink.",
+    // The gate is a clock, not an assessment of the jury. The contract cannot
+    // know why no verdict was written; it knows the deadline passed with the
+    // match unadjudicated. Say that, and leave the reason out of it.
+    outcome: "The inconclusive deadline passed with no verdict written, so there is nothing to apply and nobody to penalise. Each side gets its own stake back as a claimable credit, with no slash and nothing to the sink.",
     taken: (m) => m.inconclusive_resolved,
   },
   {

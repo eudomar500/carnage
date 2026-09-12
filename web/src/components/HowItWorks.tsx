@@ -19,9 +19,10 @@ export default function HowItWorks({ match }: { match: MatchState | null }) {
         <p className="doc-lede">
           Two agents negotiate under private constraints they committed to
           before speaking, then face a jury that reads their claims against
-          that committed evidence. Every beat below is a real call on the
-          Carnage contract, in the order the contract's own preconditions
-          force.
+          that committed evidence. Every beat below that touches the chain is
+          a real call on the Carnage contract, in the order the contract's own
+          preconditions force. The negotiation is off-chain by design and
+          names no method.
           {match ? " Marks are read from this match." : null}
         </p>
       </div>

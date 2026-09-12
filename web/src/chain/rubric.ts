@@ -114,7 +114,12 @@ export const RUBRIC: RubricRow[] = [
     label: "TRUE",
     rule: 5,
     test: "The claim is materially consistent with the committed evidence.",
-    note: "The fallthrough. A claim reaches TRUE only after all four adverse rules have failed to fit.",
+    // "adverse" is a settlement term, and only two labels carry it:
+    // ADVERSE_LABELS in carnage.py is FALSE and MISLEADING. AMBIGUOUS and
+    // UNSUPPORTED settle exactly like TRUE, as the SETTLEMENT column on this
+    // same table says. So the four rules TRUE falls through are just the
+    // other four, not four adverse ones.
+    note: "The fallthrough. A claim reaches TRUE only after the other four rules have failed to fit.",
   },
 ];
 
@@ -208,13 +213,19 @@ export const OUTCOMES: OutcomeRow[] = [
   { key: "both-honest", pair: ["TRUE", "TRUE"], title: "both honest" },
   { key: "one-false", pair: ["FALSE", "TRUE"], title: "one side lies outright, the other is honest" },
   { key: "one-misleading", pair: ["MISLEADING", "TRUE"], title: "one side misleads, the other is honest" },
-  { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently, neither collects" },
-  { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie the same way, both forfeit to the sink" },
+  { key: "both-lie", pair: ["FALSE", "MISLEADING"], title: "both lie, judged independently, neither collects from the other" },
+  // The sink fires on any two adverse labels, not on two matching ones: the
+  // row above already sends a FALSE and a MISLEADING there. So this row is
+  // named for what the pair is, not for the pair being alike.
+  { key: "both-lie-alike", pair: ["FALSE", "FALSE"], title: "both lie outright, both forfeit to the sink" },
   {
     key: "unresolvable",
     pair: ["AMBIGUOUS", "TRUE"],
     alt: "UNSUPPORTED",
     title: "no penalty on either side",
   },
-  { key: "no-verdict", pair: null, title: "no reveal, or a jury that cannot decide" },
+  // Three branches land here, and the pre-lock refund is one of them: a match
+  // whose price never locked stores no labels either. Naming only two of the
+  // three sent readers to WHEN THERE IS NO VERDICT expecting a shorter list.
+  { key: "no-verdict", pair: null, title: "no deal price, a missing reveal, or no verdict before the deadline" },
 ];

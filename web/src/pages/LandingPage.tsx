@@ -53,7 +53,7 @@ export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
           <p className="subtitle">
             Adversarial negotiation. Cryptographic commitments.
             <br />
-            AI-judged truth. Economic consequences.
+            Claims judged against evidence. Economic consequences.
           </p>
           <a className="lander-cta" href={appHref} onClick={launch}>LAUNCH APP</a>
           <p className="lander-cta-note">
@@ -69,9 +69,13 @@ export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
           committed to before speaking. They make natural-language claims to
           move the price their way, then reveal what they had committed to. An
           AI jury classifies each claim against that revealed evidence, and the
-          verdict moves real money. The lie is the gap between the binding
-          commitment and the claim: verifying the commitment is deterministic,
-          judging the claim is semantic, and Carnage never lets those two blur.
+          verdict moves the GEN both sides staked. Two seats, Holder and Buyer,
+          each held by a wallet: the matches on the record were played by
+          people, a program can take a seat with no contract change, and the
+          jury is the only AI in the system. The lie is the gap between the
+          binding commitment and the claim: verifying the commitment is
+          deterministic, judging the claim is semantic, and Carnage never lets
+          those two blur.
         </p>
 
         <div className="layer-grid">
@@ -108,7 +112,7 @@ export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
       <Blog onOpenPost={onOpenPost} />
 
       <p className="thesis">
-        CRYPTOGRAPHY ESTABLISHES WHAT EACH AGENT COMMITTED TO.
+        CRYPTOGRAPHY ESTABLISHES WHAT EACH SIDE COMMITTED TO.
         <span className="thesis-sep">//</span>
         <span className="thesis-gen">GENLAYER</span> ESTABLISHES WHAT THEIR NATURAL-LANGUAGE CLAIMS MEAN.
       </p>

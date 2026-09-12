@@ -230,6 +230,14 @@ body {
    * one.
    */
   --judge-w: min(880px, 60vw);
+  /*
+   * Where the glow sits, as a fraction of the artwork box. Declared here
+   * rather than on .judge-eye because the threat animates it: a keyframe can
+   * only reach a custom property on the element it runs on, and the roar runs
+   * on .judge. Both glow layers read it and inherit the animated value.
+   */
+  --eye-x: 55.59%;
+  --eye-y: 21.14%;
   width: var(--judge-w);
   transform: translateX(-50%);
   pointer-events: none;
@@ -274,11 +282,49 @@ body {
  */
 .judge-img--open { position: absolute; inset: 0; opacity: 0; }
 
-/* Red eye, anchored to the eye in trex-central.webp (55.7% / 20.1%). */
+/*
+ * Registered so they interpolate.
+ *
+ * An unregistered custom property is not a smooth animation: it flips at the
+ * midpoint, which would snap the glow across the eye instead of riding it. A
+ * <percentage> syntax makes the roar's shift continuous. Where @property is
+ * unsupported the declarations on .judge still resolve, so the glow is in the
+ * right place at rest and only the shift degrades to a jump.
+ */
+@property --eye-x { syntax: "<percentage>"; inherits: true; initial-value: 55.59%; }
+@property --eye-y { syntax: "<percentage>"; inherits: true; initial-value: 21.14%; }
+
+/*
+ * Anchored on the pupil, measured off the artwork rather than eyeballed.
+ *
+ * The pupil is the small dark ellipse inside the lit iris, so it cannot be
+ * found by looking for red: the brightest red is the iris and its specular
+ * highlight, which sit up and to the right of it. Measured instead as the
+ * compact dark blob inside the iris disc, on trex-central.webp at its native
+ * 1600x816:
+ *
+ *   closed frame  bbox x[884..895] y[166..179]  centre (889.5, 172.5)
+ *                 -> 55.59% across, 21.14% down
+ *   open frame    bbox x[893..905] y[155..167]  centre (899.0, 161.0)
+ *                 -> 56.19% across, 19.73% down
+ *
+ * The two are 14.9px apart in image terms, about 8px on screen at the hero's
+ * usual size, so they cannot both be served. These are the closed frame's
+ * numbers: that is the frame at rest, and the open one is only painted during
+ * a roar. The previous 55.7 / 20.1 sat about 8.5px high, on the lower edge of
+ * the highlight rather than on the pupil.
+ *
+ * .judge-eye is positioned against .judge, which is the image's own box, so a
+ * percentage here is a percentage of the artwork and needs no other offset.
+ * The translate centres the element on that point whatever its width, which is
+ * what lets the alert, intense and strike moods widen the flare without moving
+ * it; eyePulse and flarePulse repeat the translate in every keyframe so the
+ * scale pulses about the same centre.
+ */
 .judge-eye,
 .judge-eye-flare {
   position: absolute;
-  left: 55.7%; top: 20.1%;
+  left: var(--eye-x); top: var(--eye-y);
   transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: none;
@@ -379,7 +425,33 @@ body {
  * WAVE_MS and IMPACT_MS in MatchApp.tsx; each pair has to agree or a card
  * starts breaking before the ring has reached it.
  */
-.stage--threat .judge { animation: threat var(--threat-ms) ease-in-out 1 forwards; }
+/*
+ * Both animations run on .judge, which is what makes the glow follow the head.
+ *
+ * .judge holds the frames and both glow layers, so the shake it carries moves
+ * the artwork and the glow together; nothing transforms .judge-frames or the
+ * images, and the strike-time shake sits higher still, on .stage, which moves
+ * the whole hero as one. That part was already right.
+ *
+ * What was wrong is that the open frame's pupil is not where the closed one's
+ * is: 56.19% / 19.73% against 55.59% / 21.14%, about 15px apart on the 1600px
+ * artwork and 8px on screen. So while the jaws are open the glow was sitting
+ * off the pupil, which reads as the glow lagging the head. eyeShift walks the
+ * offset over to the open frame's pupil and back on jawThreat's own stops, so
+ * the two cross-fades stay in step: in over the fade-in, held while the frame
+ * is up, back over the fade-out.
+ *
+ * It has to be a second animation on .judge rather than left/top keyframes on
+ * the glow itself. Every mood sets the whole animation shorthand on .judge-eye
+ * to drive eyePulse, so a second animation there would have to be restated
+ * once per mood; animating the inherited offset instead leaves eyePulse,
+ * flarePulse and the centring translate untouched.
+ */
+.stage--threat .judge {
+  animation:
+    threat var(--threat-ms) ease-in-out 1 forwards,
+    eyeShift var(--threat-ms) linear 1 forwards;
+}
 .stage--threat .judge-img--open { animation: jawThreat var(--threat-ms) linear 1 forwards; }
 
 /* mood: verdict-calm. Everyone was honest; the judge stands down */
@@ -425,6 +497,14 @@ body {
   0%       { opacity: 0; }
   7%, 93%  { opacity: 1; }
   100%     { opacity: 0; }
+}
+
+/* The same stops as jawThreat, so the glow arrives on the open frame's pupil
+   exactly as that frame finishes fading up and leaves as it fades out. */
+@keyframes eyeShift {
+  0%       { --eye-x: 55.59%; --eye-y: 21.14%; }
+  7%, 93%  { --eye-x: 56.19%; --eye-y: 19.73%; }
+  100%     { --eye-x: 55.59%; --eye-y: 21.14%; }
 }
 
 /* ---------- vertical rails ------------------------------------------- */
@@ -1222,16 +1302,84 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
 
 /* ---------- how it works --------------------------------------------- */
 
+/*
+ * min() on the track minimum, not a bare 330px.
+ *
+ * With auto-fit, when not even one track fits the repeat count falls to 1 and
+ * the track is still sized at its minimum. At 380px the .doc content box is
+ * 312px, so a bare 330px track overran the section's right padding: 16px of
+ * gutter on the right against 34px on the left, and below 364px the card's
+ * right border was clipped outright by body{overflow-x:hidden}. min() caps the
+ * minimum at the container and changes nothing above 364px.
+ *
+ * Rows stretch, which is the default and is what the last-row spans below are
+ * for. Equal-height rows plus the auto top margin on .beat-gate put every GATE
+ * band in a row on one baseline, so the cards read as a grid rather than as a
+ * ragged stack. The slack a short card carries sits above its GATE band.
+ *
+ * Nothing here caps the body measure: .beat-what and .beat-gate have no
+ * max-width, so in a card widened by a span the text reflows across the whole
+ * card instead of leaving a column of air beside it. SETTLE's what runs about
+ * thirteen lines in a 332px track and about six in a 679px one, which is most
+ * of the gap between it and CLAIM. Measures outside this grid are untouched.
+ */
 .beats {
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); gap: 14px;
 }
 
+/*
+ * Filling the short last row.
+ *
+ * auto-fit resolves n columns once the container can hold them:
+ *
+ *   n * 330 + (n - 1) * 14 <= C
+ *
+ * where C is the .doc content box, the viewport less its two 34px gutters and
+ * capped at 1492px by .doc's own max-width of 1560px. That gives
+ *
+ *   n = 4  needs C >= 1362,  viewport >= 1430
+ *   n = 3  needs C >= 1018,  viewport >= 1086
+ *   n = 2  needs C >=  674,  viewport >=  742
+ *   n = 5  would need C >= 1706, which exceeds the 1492px cap, so four is the
+ *          widest the grid ever resolves to
+ *
+ * Ten beats divide as 4 + 4 + 2, then 3 + 3 + 3 + 1, then 5 rows of 2, then 10
+ * rows of 1. Only the first two leave a short row, so only those get a rule.
+ *
+ * Both rules are min-width and the wider one is written second, so the cascade
+ * settles it and no range needs a fractional edge. The selectors say "the last
+ * row" rather than naming beats 9 and 10; the counts still assume ten beats,
+ * and a change to BEATS means redoing this arithmetic.
+ */
+@media (min-width: 1086px) {
+  /*
+   * Three columns: one card is left over. It takes two of the three tracks and
+   * the third stays empty. Spanning all three would close the row but would
+   * put a full-bleed card among 330px ones, which reads worse than the gap.
+   */
+  .beats > :last-child { grid-column: span 2; }
+}
+@media (min-width: 1430px) {
+  /* Four columns: two cards are left over, two tracks each, row closed. */
+  .beats > :nth-last-child(-n + 2) { grid-column: span 2; }
+}
+
+/*
+ * A flex column with GATE pinned to the card's own bottom.
+ *
+ * .beats aligns its items to start, so a card has no free space for the auto
+ * margin on .beat-gate to take and the pin opens no gap. It stays because it
+ * costs nothing and holds the band on the floor if a card is ever given a
+ * height. The 9px above GATE is padding for the same reason: it survives
+ * whether or not the auto margin has anything to absorb.
+ */
 .beat {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-left: 2px solid var(--steel-dim);
   background: var(--panel);
   padding: 14px 16px 15px;
+  display: flex; flex-direction: column;
 }
 .beat--done { border-left-color: rgba(79, 158, 99, 0.55); }
 .beat--now  { border-left-color: var(--crimson); box-shadow: 0 0 24px rgba(224, 36, 28, 0.12); }
@@ -1266,7 +1414,13 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .beat-who { font-size: 10.5px; color: var(--ink-faint); }
-.beat-methods { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+/*
+ * No auto left margin. Pushing the chips to the far edge left a gap of about
+ * 180px on cards with a short "who" line, and on cards with a long one the
+ * chips wrapped to a second line and were shoved right for no reason. The
+ * 12px gap on .beat-meta sets the spacing consistently instead.
+ */
+.beat-methods { display: flex; gap: 6px; flex-wrap: wrap; }
 .beat-methods code {
   font-size: 10.5px; color: var(--green);
   border: 1px solid rgba(79, 158, 99, 0.28); padding: 1px 6px;
@@ -1274,7 +1428,10 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
 .beat-methods--none { color: var(--ink-faint); font-size: 10.5px; font-style: italic; }
 
 .beat-gate {
-  margin: 9px 0 0; font-size: 10.5px; line-height: 1.6;
+  /* auto top margin takes the card's free space so the band sits on the floor;
+     padding rather than margin keeps the 9px gap when there is no free space. */
+  margin: 0; margin-top: auto; padding-top: 9px;
+  font-size: 10.5px; line-height: 1.6;
   color: var(--ink-faint);
 }
 .beat-gate-key {
@@ -1282,14 +1439,44 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   margin-right: 6px;
 }
 
-.branches { margin-top: 26px; }
+.branches { margin-top: 30px; }  /* matches .outcomes and .bench-sub */
 .branches-title {
   margin: 0 0 8px; font-weight: 500;
   font-size: 12px; letter-spacing: 0.18em; color: var(--ink);
 }
+/*
+ * 300px, not 340px, and capped by min() for the same reason .beats is.
+ *
+ * At 1440 the .doc content box is 1372px: 340px minima gave three tracks, so
+ * the four branches rendered 3 + 1 with the fourth alone on its own row, while
+ * the beats above them rendered four across. 300px gives four tracks of 332px,
+ * which is the width the beats already use.
+ *
+ * Rows stretch here too, so the dashed boxes in a row close on one line. The
+ * four outcome paragraphs run 225 to 280 characters, so little slack is left
+ * inside any of them.
+ */
 .branch-grid {
   margin-top: 14px;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 14px;
+}
+
+/*
+ * The branches resolve their columns at 300px, so n * 300 + (n - 1) * 14 <= C:
+ *
+ *   n = 4  needs C >= 1242,  viewport >= 1310
+ *   n = 3  needs C >=  928,  viewport >=  996
+ *   n = 2  needs C >=  614,  viewport >=  682
+ *
+ * Four branches fill four columns and fill two columns, and one column is a
+ * stack. Three columns is the only short case, 3 + 1, so the rule is bounded
+ * at the top by resetting it where the fourth column appears.
+ */
+@media (min-width: 996px) {
+  .branch-grid > :last-child { grid-column: span 2; }
+}
+@media (min-width: 1310px) {
+  .branch-grid > :last-child { grid-column: auto; }
 }
 .branch {
   border: 1px dashed rgba(255, 255, 255, 0.14);
@@ -1313,7 +1500,10 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
 .rubric-row {
   display: grid;
   grid-template-columns: 52px 148px minmax(280px, 1fr) 250px;
-  gap: 18px; align-items: start;
+  /* baseline, not start: the rule number is 15px and the test and settlement
+     text are 11.5px, so aligning box tops dropped the number about 3px below
+     everything else on every row. .outcome-row already aligns this way. */
+  gap: 18px; align-items: baseline;
   padding: 14px 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -1558,6 +1748,22 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   .rubric-row { grid-template-columns: 34px 1fr; }
   .rubric-test, .rubric-settle { grid-column: 2 / -1; }
   .rep-sides { grid-template-columns: 1fr; }
+  /*
+   * The header spans carry no classes, so the re-spanning rules above cannot
+   * reach them. On two columns the third header cell auto-placed into row 2
+   * column 1, printing "TEST" under the rule number and away from the text it
+   * labels; RULE and LABEL are all a two-column layout can carry.
+   */
+  .rubric-row--head span:nth-child(3) { display: none; }
+  /*
+   * One column leaves the outcome header as two stacked labels above a table
+   * that no longer has columns for them. .outcome-side-key, switched on at
+   * 1100px, already names each figure in the row itself.
+   */
+  .outcome-row--head { display: none; }
+  /* :first-child still matches the hidden header, so the first visible row
+     kept a border-top that sat directly on the table's own border. */
+  .outcome-row--head + .outcome-row { border-top: none; }
 }
 
 /* ---------- nav: back, launch, passive status ------------------------- */
@@ -1595,6 +1801,20 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   box-shadow: 0 0 24px rgba(224, 36, 28, 0.42);
 }
 
+/*
+ * The nav kept 34px padding, a 32px gap and a 34px wordmark all the way down
+ * to 380px. With the section links hidden below 900px that left about 13px of
+ * slack, and none at all once a connected wallet adds the .nav-status chip,
+ * which has no wrap opportunity: the shrink landed on LAUNCH APP and wrapped
+ * its label inside a 68px bar. The wallet survives the trip back from the app,
+ * so this state is reachable. These four reductions recover roughly 90px.
+ */
+@media (max-width: 560px) {
+  .nav { padding: 0 16px; gap: 14px; }
+  .nav-logo { font-size: 26px; }
+  .nav-launch { padding: 11px 14px; letter-spacing: 0.12em; }
+}
+
 /* ---------- landing page --------------------------------------------- */
 
 .lander {
@@ -1608,7 +1828,9 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   position: relative; z-index: 7;
   padding-top: 336px; text-align: center;
 }
-.lander-center .subtitle { margin-bottom: 34px; }
+/* 8px, down from 34px: lifts LAUNCH APP and its note about 26px and moves
+   nothing above them. The judge is absolutely positioned and does not move. */
+.lander-center .subtitle { margin-bottom: 8px; }
 
 .lander-cta {
   display: inline-block;
@@ -1674,6 +1896,12 @@ textarea:disabled { opacity: 0.45; cursor: default; color: var(--ink-faint); res
   .lander { min-height: 0; padding-bottom: 20px; }
   .lander .judge { position: relative; top: 0; left: 0; transform: none; width: 100%; margin-bottom: -40px; }
   .lander-center { padding-top: 0; }
+}
+
+@media (max-width: 700px) {
+  /* Centred at 380px the lede is about 40 characters a line over 14 lines,
+     with both edges ragged. Left-aligned it keeps one straight edge. */
+  .lander-lede { text-align: left; }
 }
 
 /* ---------- replay: on-chain proof strip ------------------------------ */
@@ -1759,21 +1987,42 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
   font-size: 12px; letter-spacing: 0.18em; color: var(--ink);
 }
 
+/*
+ * One metric per row, full width, rather than a row of tiles.
+ *
+ * The metric texts run from about 38 to 175 characters, so across five narrow
+ * tiles 01 and 05 stood several lines taller than 02 to 04. Stretching the row
+ * left voids in the short tiles; letting each size to its content left a
+ * ragged bottom edge. A row apiece has nothing to equalise: the number and the
+ * title sit in a fixed left column, the text runs on the right in one or two
+ * lines, and a hairline separates each row from the next.
+ *
+ * The tokens are the tiles' own, unchanged. Only the box is gone.
+ */
 .bench-metrics {
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;
+  display: grid;
 }
 .metric {
-  display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-left: 2px solid var(--crimson-dim);
-  background: var(--panel);
-  padding: 12px 15px 13px;
+  /* 30 + 12 + 218 puts the number and the title in 260px, then the text. */
+  display: grid; grid-template-columns: 30px 218px minmax(0, 1fr);
+  gap: 0 12px; align-items: baseline;
+  padding: 11px 0 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+.metric:first-child { border-top: none; }
 .metric-no { font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.1em; }
 .metric-key { font-size: 12px; letter-spacing: 0.06em; color: var(--crimson); }
 .metric-text {
-  grid-column: 2; font-size: 11.5px; line-height: 1.65; color: var(--ink-dim);
+  font-size: 11.5px; line-height: 1.65; color: var(--ink-dim);
+}
+
+@media (max-width: 700px) {
+  /* Two columns will not carry a 260px label and a readable measure beside it,
+     so the text drops under the title and keeps the number's column as a
+     hanging indent. */
+  .metric { grid-template-columns: 30px minmax(0, 1fr); }
+  .metric-text { grid-column: 2; margin-top: 5px; }
 }
 
 /* The metrics list has no bottom margin, so the link to the lab carries its
@@ -1847,7 +2096,17 @@ a.proof-link:hover { color: var(--crimson); border-bottom-color: var(--crimson);
 
 /* ---------- blog list ------------------------------------------------- */
 
+/*
+ * One column by default, two once there is room for a 420px card.
+ *
+ * A single column made each card 1372px wide at 1440 while its summary is
+ * capped at 78ch, so roughly 740px of every card was empty on a page otherwise
+ * built from 330 to 450px tiles.
+ */
 .posts { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+@media (min-width: 1100px) {
+  .posts { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+}
 
 .post-card { border: 1px solid rgba(255, 255, 255, 0.08); background: var(--panel); }
 .post-card-link {

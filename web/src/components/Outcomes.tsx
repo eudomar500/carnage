@@ -20,11 +20,11 @@ export default function Outcomes() {
     <div className="outcomes" id="outcomes">
       <h3 className="outcomes-title">HOW A MATCH CAN END</h3>
       <p className="doc-lede">
-        Every match lands in one of these. The jury labels each claim on its
-        own, and settlement runs the same rule once per side, so a match
-        result is nothing more than the two labels composed. Percentages are
-        of the stake that side posted: 100% is level, above it is the other
-        side's slashed stake coming across.
+        The jury labels each claim on its own, and settlement runs the same
+        rule once per side, so a match result is the two labels composed. The
+        five labels give 25 ordered pairs; the rows below are representative
+        ones. Percentages are of the stake that side posted: 100% is level,
+        above it is the other side's slashed stake coming across.
       </p>
 
       <div className="outcome-table">
@@ -68,9 +68,15 @@ export default function Outcomes() {
 
               <span className="outcome-case">
                 {o.title}
+                {/*
+                  split.sink is a percentage of ONE stake and it runs past 100:
+                  FALSE + MISLEADING sends 150. Printing "150% of one stake"
+                  puts the number and its unit at odds, so divide back into
+                  stakes, which is the unit the figure is actually in.
+                */}
                 {split && split.sink > 0 ? (
                   <em className="outcome-side-note">
-                    {split.sink}% of one stake goes to the protocol sink, not across
+                    {split.sink / 100} stakes go to the protocol sink instead of crossing
                   </em>
                 ) : null}
               </span>

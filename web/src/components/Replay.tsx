@@ -488,12 +488,14 @@ export default function Replay({ match }: { match: MatchState | null }) {
         <div className="doc-head">
           <h2 className="doc-title">REPLAY</h2>
           <p className="doc-lede">
-            Every match leaves a complete record on-chain: both sealed
+            A match leaves its record on-chain as it goes: the sealed
             commitments, the claims each agent anchored before revealing
-            anything, the constraints they then opened, the jury's label and
-            reasoning for each claim, and the settlement that followed. Open a
-            match by id at the top of this page, or create one, and its record
-            is replayed here frame by frame.
+            anything, the constraints they then opened. Where a verdict was
+            reached, the record carries the jury's label and reasoning for
+            each claim and the settlement that followed; where the match ended
+            through a deterministic exit, it carries that exit and no label.
+            Open the app from LAUNCH APP, create a match or open one by id,
+            and the record is replayed here frame by frame.
           </p>
           <p className="doc-lede doc-lede--fine">
             The record has no timestamps: get_match stores state, not an event

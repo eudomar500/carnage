@@ -80,15 +80,15 @@ export default function Rubric({ match }: { match: MatchState | null }) {
       </div>
 
       <p className="rubric-foot">
-        The system classifies the claim, never the agent's intent. A verdict
-        says "this claim is MISLEADING", not "this agent tried to deceive".
+        The system classifies the claim, never a side's intent. A verdict
+        says "this claim is MISLEADING", not "this side tried to deceive".
         That distinction is what makes the verdict defensible, and it is
         written into the adjudication prompt itself. The deal price is never
         rewritten: the label picks the penalty, and that is the only lever.
         A slashed portion normally crosses to the counterparty. Where both
-        sides drew an adverse label it goes to the protocol sink instead,
-        since crossing equal penalties between two liars would cancel out and
-        pay them what two honest players get.
+        sides drew an adverse label, FALSE or MISLEADING on each, the slashed
+        portions go to the protocol sink instead, because a counterparty that
+        lied too has not earned them.
       </p>
 
       <Outcomes />

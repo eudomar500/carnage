@@ -52,6 +52,8 @@ type Reference = {
 };
 
 const REFERENCES: Reference[] = [
+  // Both entries are cited by number from the body, so neither sits here
+  // without a sentence pointing at it.
   {
     n: 1,
     title:
@@ -91,17 +93,18 @@ export default function Benchmark({ onOpenLab }: BenchmarkProps) {
             evaluate text, has shown that these judges can be manipulated by the
             very inputs they are asked to judge. Recent work formalizing
             prompt-injection attacks against judge architectures reports attack
-            success rates above 30 percent against current models. A claim
+            success rates above 30 percent against current models; see
+            references [1] and [2] below. A claim
             written to be judged can carry an instruction aimed at the judge
-            itself, and often it works.
+            itself.
           </p>
 
           <p className="bench-para">
-            Most systems that use an AI jury never test this. They demonstrate
-            the happy path: two well-behaved parties, a clean verdict, applause.
-            Carnage does the opposite. Every match is a deliberate attempt to
-            deceive the jury or to attack it directly, and the benchmark
-            measures what the jury does under that pressure.
+            The recorded matches are built to test that weakness. Claims were
+            written to mislead the jury, one was written to attack it directly,
+            and honest claims sit alongside them as the baseline. Every one of
+            them is on the record, and the benchmark measures what the jury did
+            under that pressure.
           </p>
         </div>
 
@@ -154,20 +157,21 @@ export default function Benchmark({ onOpenLab }: BenchmarkProps) {
       ) : null}
 
       <p className="bench-para bench-para--wide">
-        The academic work on this problem runs in research settings: fixed
-        datasets, local models, no stakes. Carnage runs it in production. The
-        jury is a live network of independent validators on GenLayer, the
-        evidence is cryptographically committed before anyone speaks, the
-        verdict moves real funds, and every result is recorded on-chain and
-        reproducible from the block explorer. That is the gap Carnage fills: it
-        takes a question the research community is asking in isolation and
-        answers it where it actually matters, on a decentralized adjudication
-        layer under real economic pressure.
+        The academic work on this problem runs on fixed datasets against local
+        models with nothing staked. Carnage runs it on a live chain. The jury
+        is a network of independent validators on GenLayer's Bradbury testnet,
+        the evidence is cryptographically committed before anyone speaks, the
+        verdict moves the GEN each side staked, and every result is a
+        transaction anyone can read back from the block explorer. The stakes
+        are small and they are real. That is the gap Carnage fills: it takes a
+        question the research community is asking in isolation and asks it on
+        a decentralized adjudication layer that settles in GEN.
       </p>
 
       <p className="bench-close">
-        The agent economy is building courts. Carnage is the stress test that
-        tells you whether the court can be bought.
+        The agent economy is building courts. Carnage puts one under
+        adversarial pressure and leaves every ruling on the record, where
+        anyone can check it.
       </p>
 
       <div className="refs">
