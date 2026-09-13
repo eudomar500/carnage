@@ -115,6 +115,38 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const stakes = useMemo(() => stakeSpread(matches), [matches]);
 
   const adjudicated = matches.filter((m) => m.adjudicated).length;
+
+  // The corpus used to share one pair of revealed constraints, and the LIMITS
+  // note said so. Match 9 revealed a pair outside the band, so that sentence
+  // is now only true of part of the record. Both halves are counted here
+  // rather than written down, so the note follows the chain instead of a
+  // memory of it.
+  const insideBand = useMemo(
+    () =>
+      matches.filter(
+        (m) =>
+          m.adjudicated &&
+          m.holder_revealed_state >= m.price_floor &&
+          m.holder_revealed_state <= m.price_ceil &&
+          m.buyer_revealed_state >= m.price_floor &&
+          m.buyer_revealed_state <= m.price_ceil,
+      ).length,
+    [matches],
+  );
+  const outsideBand = useMemo(
+    () =>
+      matches
+        .filter(
+          (m) =>
+            m.adjudicated &&
+            (m.holder_revealed_state < m.price_floor ||
+              m.holder_revealed_state > m.price_ceil ||
+              m.buyer_revealed_state < m.price_floor ||
+              m.buyer_revealed_state > m.price_ceil),
+        )
+        .map((m) => String(m.match_id)),
+    [matches],
+  );
   const ambiguous = dist.find((d) => d.label === "AMBIGUOUS")?.count ?? 0;
   const scoredRows = useMemo(() => rows.filter((r) => r.truth.verifiable), [rows]);
   const unscoredRows = useMemo(() => rows.filter((r) => !r.truth.verifiable), [rows]);
@@ -690,10 +722,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               <ul className="lab-method">
                 <li>
                   {adjudicated} {plural(adjudicated, "match", "matches")}, played
-                  from two wallets, on one price band, one stake, one deal price
-                  and one pair of revealed constraints. Only the claim text
-                  varies, which is what makes the label the only moving part and
-                  also what stops any figure here from being a rate.
+                  from two wallets, on one price band, one stake and one deal
+                  price. {insideBand} of them share one pair of revealed
+                  constraints;{" "}
+                  {plural(outsideBand.length, "match", "matches")}{" "}
+                  {outsideBand.join(", ")} revealed a pair outside the band.
+                  That narrowness is what stops any figure here from being a
+                  rate.
                 </li>
                 <li>
                   {agree.verifiable} scored claims, drawn from{" "}

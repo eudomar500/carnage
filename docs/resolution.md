@@ -37,8 +37,8 @@ path cannot become a dead end.
 Four of those ways out have never been taken here. `refund_before_lock`,
 `resolve_no_reveal`, `resolve_inconclusive` and `force_settle` are proven in
 the direct-mode tests and nowhere else. The deployed contract's log holds the
-deployment, eight `create_match` calls, the commit, fund, anchor, price and
-reveal calls behind eight matches, ten `adjudicate`, eight `settle`, thirteen
+deployment, nine `create_match` calls, the commit, fund, anchor, price and
+reveal calls behind nine matches, eleven `adjudicate`, nine `settle`, fifteen
 `claim` and the two sink-handover transactions, and nothing else. So the
 guarantee is a property of the code and the tests that pin it, not something
 the record has been made to demonstrate. That is the same standard item 4
@@ -261,7 +261,7 @@ Resolution degrades in layers.
    any caller can push the same settlement through, applying the same stored
    labels through the same rule. The grace period is sized to outlast the
    appeal window by design, so that on a healthy chain the automatic path gets
-   there first. That is what the record shows: all eight settlements came
+   there first. That is what the record shows: all nine settlements came
    through the scheduled call, and `force_settle` has never run here.
 
    One practical wrinkle for a caller. `adjudicated_at` is stored on the match

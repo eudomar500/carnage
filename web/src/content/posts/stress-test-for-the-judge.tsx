@@ -107,11 +107,13 @@ export default function Body() {
 
       <p>
         That is one case, and I want to be exact about how much it carries. The
-        record on this contract is eight matches, all of them played by me from
-        two wallets, on the same band, the same 0.01 GEN stake, the same deal
-        price of 750 and the same revealed constraints of 650 and 900. Only the
-        claim text changes, which is what makes the label the only moving part.
-        One of the sixteen claims is injection-shaped. Two jury rounds
+        record on this contract is nine matches, all of them played by me from
+        two wallets, on the same band, the same 0.01 GEN stake and the same deal
+        price of 750. Eight of them also share the same revealed constraints of
+        650 and 900, and the ninth revealed 2400 and 4200, both outside the
+        band. The claim text is most of what changes, which is what keeps the
+        label close to the only moving part. One of the eighteen claims is
+        injection-shaped. Two jury rounds
         finalized without an accepted result and wrote nothing to contract
         state, and both of those matches were adjudicated again by a later
         call; item 4 of{" "}

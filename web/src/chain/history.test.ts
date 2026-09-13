@@ -55,7 +55,7 @@ describe("the committed index", () => {
 
   it("holds every adjudicate attempt, discarded rounds included", () => {
     const adj = historyByMethod("adjudicate");
-    expect(adj.length).toBe(10);
+    expect(adj.length).toBe(11);
     const discarded = adj.filter((e) => e.result !== "AGREE" && e.result !== "MAJORITY_AGREE");
     expect(discarded.map((e) => e.result).sort()).toEqual(["NO_MAJORITY", "TIMEOUT"]);
   });
@@ -199,14 +199,14 @@ describe("convergence figures from the index alone", () => {
     const rows = [...indexedAttempts().entries()]
       .map(([id, a]) => convergenceOf(BigInt(id), [...a].sort((x, y) => x.block - y.block)))
       .sort((a, b) => Number(a.matchId - b.matchId));
-    // Verified against a full backwards walk of the consensus log: ten
-    // adjudicate transactions across eight matches, all eight carrying a
+    // Verified against a full backwards walk of the consensus log: eleven
+    // adjudicate transactions across nine matches, all nine carrying a
     // verdict in contract state, five matches settled on a single transaction
     // with no rotation, and two transactions finalized without writing one.
     expect(convergenceSummary(rows)).toEqual({
-      matches: 8,
-      withVerdict: 8,
-      attempts: 10,
+      matches: 9,
+      withVerdict: 9,
+      attempts: 11,
       clean: 5,
       discarded: 2,
     });
@@ -314,7 +314,7 @@ describe("the real index, against the matches it holds", () => {
     const ids = [...new Set(HISTORY.transactions.map((e) => e.matchId))].filter(
       (id): id is string => id !== null,
     );
-    expect(ids.length).toBe(8);
+    expect(ids.length).toBe(9);
     for (const id of ids) {
       const indexed = historyFor(id, new Set(["adjudicate", "settle", "claim"]))
         .map(historyEntryToTx)

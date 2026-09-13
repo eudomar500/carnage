@@ -79,7 +79,7 @@ row and the test that keeps it closed can be read together.
 | C2 | Payout isolation: balances are pooled across matches, so an over-credit in one match could draw on another's stake | The withdrawal path now refuses to let a match pay out more than that match funded | `test_c2_claim_never_exceeds_the_match_escrow` |
 | C3 | Stranded funds: several states between funding and the price lock had no exit at all | New permissionless `refund_before_lock`, deadline-gated, returning each side exactly what it funded | `test_c3_refund_before_lock_prices_never_matched` and seven more c3 tests |
 | C4 | Deadline handling: a deadline accepted at creation could make the deterministic exits unusable later | Deadlines are validated and converted at creation, and every later check compares integers, so no resolution path can fail on a stored value | `test_c4_naive_deadlines_rejected`, `test_c4_mixed_naive_and_aware_deadlines_rejected` |
-| C5 | Settlement liveness: an adjudicated match whose scheduled settlement never ran had no way to be settled by anyone | New permissionless `force_settle`, available `SETTLE_GRACE_SECONDS` (7200) after `adjudicated_at`, applying the same stored labels through the same rule. The grace period is sized to outlast the appeal window by design; on the record all eight settlements came through the scheduled call and `force_settle` has never run | `test_c5_force_settle_recovers_an_unsettled_verdict` and three more c5 tests |
+| C5 | Settlement liveness: an adjudicated match whose scheduled settlement never ran had no way to be settled by anyone | New permissionless `force_settle`, available `SETTLE_GRACE_SECONDS` (7200) after `adjudicated_at`, applying the same stored labels through the same rule. The grace period is sized to outlast the appeal window by design; on the record all nine settlements came through the scheduled call and `force_settle` has never run | `test_c5_force_settle_recovers_an_unsettled_verdict` and three more c5 tests |
 
 ### High (4), all resolved
 
@@ -170,10 +170,12 @@ reading carefully. These were checked and found correct as they stood:
 
 ## Verification
 
-The hardened contract carries 127 direct mode tests, all passing. 77 of them
-predate the review and keep the same count; three of those files were edited
-during hardening, so they are the original suite by coverage rather than
-untouched, and they are what demonstrates the game mechanic is intact. The
+The hardened contract carries 128 direct mode tests, all passing. 78 of them
+sit outside the regression suite: 77 predate the review and keep the same
+count, and one was added after it to pin the commitment preimage on both
+sides. Three of the pre-review files were edited during hardening, so they are
+the original suite by coverage rather than untouched, and they are what
+demonstrates the game mechanic is intact. The
 other 50 are the regression suite in `tests/direct/test_carnage_security.py`:
 48 carry a finding id, 2 are the id-free conservation tests, and 4 findings
 have no test for the reasons given in the tables above.
