@@ -1,0 +1,16 @@
+# Consensus v0.6 release-candidate toolchain, for contracts/carnage_v06.py and
+# tests/direct_v06 only.
+#
+# Do NOT install this alongside requirements.txt. The two pull incompatible
+# genlayer-py majors, and tests/direct (the Bradbury suite) only runs on the
+# released pins in requirements.txt. Use a separate virtualenv:
+#
+#     python3 -m venv .venv-v06
+#     .venv-v06/bin/pip install -r requirements-v06.txt
+#     .venv-v06/bin/pytest tests/direct_v06
+#
+# Prerelease versions are pinned exactly on purpose: these are RC tags and
+# neither `latest` nor a caret range resolves to them.
+genlayer-py==0.19.0rc2
+genlayer-test==0.30.0rc2
+pytest==9.1.1
