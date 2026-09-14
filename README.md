@@ -41,7 +41,7 @@ A conventional contract can check `hash(reveal) == commitment` and compare two n
 
 > The committed `minimum_price` is 650. The seat said, "I really can't go below 780." Is that claim true, defensible, misleading, or false relative to the evidence?
 
-Deciding whether *"I can't go much lower"* misrepresents a floor of 650 requires interpreting language against evidence, and the ruling is what moves the money. That is what GenLayer's Intelligent Contracts do, and `exec_prompt` inside `adjudicate` is the only nondeterministic call in the contract.
+Deciding whether *"I really can't go below 780"* misrepresents a floor of 650 requires interpreting language against evidence, and the ruling is what moves the money. That is what GenLayer's Intelligent Contracts do, and `exec_prompt` inside `adjudicate` is the only nondeterministic call in the contract.
 
 ## How a match works
 
@@ -237,7 +237,7 @@ The deal price is agreed off-chain and never moves through the contract, so with
 
 ## What comes next
 
-Nine matches say what they say: on this record no lie has passed the jury, one claim written to be ambiguous was called misleading, and one instruction aimed at the judge was ignored. That is a start, not a result. The instrument is built; what it needs now is volume, variety and a reason for people to keep feeding it. Each item below is a direction the current contract and app already point at.
+Nine matches say what they say: on this record no claim that contradicted its committed number has passed the jury, one claim written to be ambiguous was called misleading, and one instruction aimed at the judge was ignored. That is a start, not a result. The instrument is built; what it needs now is volume, variety and a reason for people to keep feeding it. Each item below is a direction the current contract and app already point at.
 
 **The benchmark**
 
