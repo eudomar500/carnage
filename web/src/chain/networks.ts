@@ -51,6 +51,23 @@ import { studioDevnet } from "genlayer-js-next/chains";
  *                but "execution failed" and the two are indistinguishable from
  *                the error alone. See isUnknownMatch in chain/contract.ts.
  *
+ *   simulateCarriesValue
+ *                simulateWriteContract can carry the call's value, so a
+ *                payable call can be simulated as it will actually be sent.
+ *                False on Bradbury, whose SDK major (1.2) does not read a
+ *                `value` argument at all: it destructures account, address,
+ *                functionName, args, kwargs and leaderOnly and nothing else,
+ *                so the gen_call params it builds have no value field and
+ *                every simulated fund_* trips the contract's final
+ *                `value != stake_amount` guard. True on Studio Next, where
+ *                2.0 serialises a non-zero value into the gen_call params and
+ *                the node honours it: measured on 2026-09-14 against match 2
+ *                of the deployed contract, fund_buyer simulated with
+ *                0.01 GEN returns cleanly and the same call without a value
+ *                fails with "execution failed" and no revert bytes, which is
+ *                the generic "Missing or invalid parameters" a reader saw
+ *                before the wallet ever opened.
+ *
  *   feesOnWrite  every write must carry a fee deposit quoted by the SDK.
  *                Consensus v0.6 rejects a zero deposit with
  *                FeeValueMustBeNonZero, and a call that emits a message also
@@ -81,6 +98,7 @@ export type Capabilities = {
   hasIndex: boolean;
   withdrawals: boolean;
   revertDataInReads: boolean;
+  simulateCarriesValue: boolean;
   feesOnWrite: boolean;
 };
 
@@ -140,6 +158,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasIndex: true,
       withdrawals: true,
       revertDataInReads: true,
+      simulateCarriesValue: false,
       feesOnWrite: false,
     },
     blurb: "The durable record. Every match ever played by Carnage is here.",
@@ -171,6 +190,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasIndex: false,
       withdrawals: false,
       revertDataInReads: false,
+      simulateCarriesValue: true,
       feesOnWrite: true,
     },
     blurb:

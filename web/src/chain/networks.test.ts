@@ -54,6 +54,7 @@ describe("network registry", () => {
       hasIndex: true,
       withdrawals: true,
       revertDataInReads: true,
+      simulateCarriesValue: false,
       feesOnWrite: false,
     });
     expect(NETWORKS["studio-next"].capabilities).toEqual({
@@ -61,6 +62,7 @@ describe("network registry", () => {
       hasIndex: false,
       withdrawals: false,
       revertDataInReads: false,
+      simulateCarriesValue: true,
       feesOnWrite: true,
     });
   });
@@ -71,6 +73,16 @@ describe("network registry", () => {
     // more, which is what makes the discovery stop condition ambiguous there.
     expect(NETWORKS.bradbury.capabilities.revertDataInReads).toBe(true);
     expect(NETWORKS["studio-next"].capabilities.revertDataInReads).toBe(false);
+  });
+
+  it("records which SDK major can simulate a payable call with its value", () => {
+    // 1.2's simulateWriteContract never reads a value argument, so every
+    // simulated fund_* on Bradbury trips the contract's final
+    // `value != stake_amount` guard and the guard has to be tolerated there.
+    // 2.0 serialises it into the gen_call params and the Studio node honours
+    // it, measured against match 2 of the deployed contract.
+    expect(NETWORKS.bradbury.capabilities.simulateCarriesValue).toBe(false);
+    expect(NETWORKS["studio-next"].capabilities.simulateCarriesValue).toBe(true);
   });
 
   it("supplies an explorer base for Studio Next, whose chain definition has none", () => {

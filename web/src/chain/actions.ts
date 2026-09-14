@@ -2,7 +2,13 @@ import { TransactionStatus } from "genlayer-js/types";
 import type { CalldataEncodable } from "genlayer-js/types";
 import type { Stage } from "./errors";
 import { concat, hexToBytes, keccak256, numberToBytes } from "viem";
-import { CARNAGE_ADDRESS, simulationClient, toCalldataAddress, writeClient } from "./client";
+import {
+  CARNAGE_ADDRESS,
+  capabilities,
+  simulationClient,
+  toCalldataAddress,
+  writeClient,
+} from "./client";
 import { quoteFees, withFees } from "./fees";
 import { getMatch } from "./contract";
 import type { Role } from "./roles";
@@ -64,13 +70,23 @@ type CallSpec = {
  * connected wallet as gl.message.sender_address, so an unmet precondition or
  * a wrong-role sender is caught for free, before the wallet is ever opened.
  * Only a clean simulation is sent for real.
+ *
+ * A payable call is simulated with its value where the network's SDK can
+ * carry one, so what is simulated is the call that will be sent rather than a
+ * zero-value version of it that the contract would refuse for a reason the
+ * reader never asked about. The value is attached only when the registry says
+ * the simulation carries it: on Bradbury the 1.2 SDK drops the argument on the
+ * floor, so the params it builds stay byte for byte the ones it always built.
  */
 export async function preflight(account: `0x${string}`, spec: CallSpec): Promise<void> {
+  const value = spec.value ?? 0n;
+  const carriesValue = capabilities().simulateCarriesValue && value > 0n;
   try {
     await simulationClient(account).simulateWriteContract({
       address: CARNAGE_ADDRESS,
       functionName: spec.functionName,
       args: spec.args,
+      ...(carriesValue ? { value } : {}),
     });
   } catch (err) {
     throw rethrow(err, "preflight");
@@ -300,12 +316,22 @@ export async function commit(
 // ---- fund -----------------------------------------------------------------
 
 /**
- * fund_* is payable, and simulateWriteContract cannot carry a value, so a
+ * fund_* is payable, and on a network whose simulation cannot carry a value a
  * simulation always trips the final `value != stake_amount` guard.
  *
  * That guard is the LAST check in the contract's fund_*: sender, both-committed
  * and not-already-funded are all verified before it. So reaching exactly that
  * error means every other precondition passed, and we treat it as a pass.
+ *
+ * That allowance is Bradbury's alone, and it is gated rather than blanket
+ * because it is only sound while the simulated call really is the sent call
+ * minus its value. Where the simulation does carry the value -- Studio Next --
+ * the guard can only fire for a genuinely wrong amount, and swallowing it
+ * would send a transaction the node has already refused. It is also the
+ * network where nothing could be swallowed by accident anyway: a failed call
+ * there carries no revert bytes, so the guard's text never reaches us and the
+ * old blanket catch rethrew a bare "Missing or invalid parameters" with no
+ * hint that the missing parameter was the value we had not simulated.
  */
 const FUND_VALUE_GUARD = "must fund exactly stake_amount";
 
@@ -317,13 +343,15 @@ export async function fund(
   hooks?: SendHooks,
 ): Promise<SendResult> {
   const functionName = role === "holder" ? "fund_holder" : "fund_buyer";
+  const spec: CallSpec = { functionName, args: [matchId], value: stakeWei };
   try {
-    await preflight(account, { functionName, args: [matchId] });
+    await preflight(account, spec);
   } catch (err) {
+    if (capabilities().simulateCarriesValue) throw err;
     const msg = (err as Error).message;
     if (!msg.includes(FUND_VALUE_GUARD)) throw err;
   }
-  return send(account, { functionName, args: [matchId], value: stakeWei }, hooks);
+  return send(account, spec, hooks);
 }
 
 // ---- anchor claim ---------------------------------------------------------
