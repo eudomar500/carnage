@@ -42,6 +42,11 @@ const SECTIONS: Section[] = [
 export type NavShell = {
   wallet: `0x${string}` | null;
   connecting: boolean;
+  /**
+   * Why the last connect attempt failed, already decoded to one line. Null
+   * when there is nothing to report, including while an attempt is running.
+   */
+  connectError?: string | null;
   onConnect: () => void;
   onDisconnect: () => void;
   /** Goes to the landing, optionally at one of its sections. */
@@ -79,6 +84,7 @@ export default function TopNav({
   variant,
   wallet,
   connecting,
+  connectError,
   onConnect,
   onDisconnect,
   onHome,
@@ -216,9 +222,17 @@ export default function TopNav({
           </button>
         </span>
       ) : (
-        <button className="nav-cta" onClick={onConnect} disabled={connecting}>
-          {connecting ? "CONNECTING..." : "CONNECT WALLET"}
-        </button>
+        /* The button and its failure are one unit. The message is positioned
+           under the button rather than placed in the row, so a failure does
+           not change the height of a sticky header. */
+        <span className="nav-cta-wrap">
+          <button className="nav-cta" onClick={onConnect} disabled={connecting}>
+            {connecting ? "CONNECTING..." : "CONNECT WALLET"}
+          </button>
+          {connectError ? (
+            <p className="act-err nav-cta-err" role="alert">{connectError}</p>
+          ) : null}
+        </span>
       )}
     </header>
   );

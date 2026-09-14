@@ -108,3 +108,54 @@ describe("the faucet stays where it was", () => {
     expect(markup({ variant: "post" })).not.toContain("net-faucet");
   });
 });
+
+/**
+ * A failed connect has to say so.
+ *
+ * The rejection used to be swallowed on the assumption that the wallet shows
+ * its own error, which is true for a rejected prompt and false for a wallet
+ * that cannot reach the chain. See onConnect in App.tsx.
+ */
+describe("the connect failure line", () => {
+  const FAILED = 'Unrecognized chain ID "0xf22d".';
+
+  it("is absent until something fails", () => {
+    const html = markup({ variant: "app" });
+    expect(html).toContain("CONNECT WALLET");
+    expect(html).not.toContain("nav-cta-err");
+  });
+
+  it("shows the decoded message beside the button, in the existing error style", () => {
+    const html = markup({ variant: "app", connectError: FAILED });
+    expect(html).toContain("nav-cta-err");
+    // act-err is the class every other failure on the site already uses.
+    expect(html).toContain("act-err");
+    expect(html).toContain("Unrecognized chain ID");
+    expect(html).toContain('role="alert"');
+  });
+
+  it("stays inside the button's own wrapper, so the nav row cannot grow", () => {
+    const html = markup({ variant: "app", connectError: FAILED });
+    const wrap = html.slice(html.indexOf("nav-cta-wrap"));
+    expect(wrap.indexOf("nav-cta-err")).toBeGreaterThan(-1);
+  });
+
+  it("is offered on every view that can connect", () => {
+    for (const variant of ["landing", "post", "app"] as const) {
+      const html = markup({ variant, connectError: FAILED });
+      // The landing and post navs carry no connect button, so they carry no
+      // failure line either; the app does. Either way nothing throws.
+      if (html.includes("CONNECT WALLET")) expect(html).toContain("nav-cta-err");
+    }
+  });
+
+  it("is gone once a wallet is connected", () => {
+    const html = markup({
+      variant: "app",
+      wallet: "0x612f985025feeB57B617d548Baf46371E310EaAF",
+      connectError: FAILED,
+    });
+    expect(html).not.toContain("nav-cta-err");
+    expect(html).toContain("DISCONNECT");
+  });
+});

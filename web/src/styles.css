@@ -161,6 +161,22 @@ body {
 }
 .nav-cta:disabled { opacity: 0.6; cursor: default; }
 
+/* The connect button and its failure line.
+   The message hangs below the button instead of sitting in the row: the nav
+   is sticky and a wrapping error would push the whole page down. Right
+   aligned to the button it belongs to, and capped so a long wallet error
+   truncates rather than spanning the header. */
+.nav-cta-wrap { position: relative; margin-left: auto; display: inline-flex; }
+.nav-cta-wrap .nav-cta { margin-left: 0; }
+.nav-cta-err {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  margin: 0;
+  max-width: 320px;
+  text-align: right;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .nav-wallet {
   margin-left: auto;
   display: inline-flex; align-items: center; gap: 9px;

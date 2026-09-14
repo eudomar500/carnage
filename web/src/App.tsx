@@ -7,6 +7,7 @@ import { findPost } from "./content/posts";
 import type { NavShell } from "./components/TopNav";
 import { useNotifications } from "./hooks/useNotifications";
 import { connectWallet, disconnectWallet, watchWallet } from "./chain/client";
+import { decodeGenvmError } from "./chain/errors";
 import { NetworkProvider } from "./chain/network-context";
 import { hrefFor, routeFromUrl, type Route } from "./lib/route";
 import { previewFromUrl } from "./dev/preview";
@@ -42,6 +43,7 @@ function AppRoutes() {
   const [route, setRoute] = useState<Route>(routeFromUrl);
   const [wallet, setWallet] = useState<`0x${string}` | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   // DEV ONLY: ?preview=<scenario> substitutes a synthetic match so the judge
   // animation can be inspected without playing a match on-chain. It is a match
@@ -131,13 +133,28 @@ function AppRoutes() {
     return () => removeEventListener("popstate", sync);
   }, []);
 
+  /**
+   * Connect, and say so when it fails.
+   *
+   * This used to swallow the rejection on the grounds that the wallet shows
+   * its own error. That holds for a rejected prompt and for nothing else. A
+   * wallet that cannot switch to the chain rejects our request without
+   * telling the user anything, so the button went back to CONNECT WALLET with
+   * no explanation and no way to tell a refusal from a failure. Rabby on
+   * studio-next was the case that made it visible; see isUnknownChain in
+   * chain/client.ts.
+   *
+   * Cleared at the start of every attempt, so the line on screen always
+   * belongs to the attempt the reader just made.
+   */
   const onConnect = useCallback(async () => {
+    setConnectError(null);
     setConnecting(true);
     try {
       const { address } = await connectWallet();
       setWallet(address);
-    } catch {
-      /* surfaced by the wallet itself */
+    } catch (err) {
+      setConnectError(decodeGenvmError(err));
     } finally {
       setConnecting(false);
     }
@@ -146,6 +163,7 @@ function AppRoutes() {
   const onDisconnect = useCallback(async () => {
     await disconnectWallet();
     setWallet(null);
+    setConnectError(null);
   }, []);
 
   // If the user switches accounts in their wallet, the seat must follow.
@@ -158,7 +176,7 @@ function AppRoutes() {
   // between the landing, a post and the app.
   const notifications = useNotifications(wallet);
   const nav: NavShell = {
-    wallet, connecting, onConnect, onDisconnect, onHome, onLaunch,
+    wallet, connecting, connectError, onConnect, onDisconnect, onHome, onLaunch,
     notifications, onOpenMatch: onOpenFromBell, onOpenLab,
   };
 

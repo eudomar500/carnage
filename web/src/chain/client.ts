@@ -265,6 +265,71 @@ export function watchWallet(onChange: (address: `0x${string}` | null) => void): 
 }
 
 /**
+ * Whether a failed wallet_switchEthereumChain means "I do not have that chain".
+ *
+ * Three shapes, because wallets disagree about how to say it.
+ *
+ *   4902                        the EIP-1193 code for an unrecognised chain.
+ *
+ *   data.originalError.code     MetaMask nests the real code one level down
+ *                               when the request came through its own
+ *                               provider wrapper, so the top-level code is a
+ *                               generic internal error.
+ *
+ *   -32603 with a message       Rabby. Reproduced against studio-next: the
+ *   naming an unrecognized      switch rejects with
+ *   chain                         {
+ *                                   code: -32603,
+ *                                   message: 'Unrecognized chain ID "0xf22d".
+ *                                     Try adding the chain using
+ *                                     wallet_switchEthereumChain first.',
+ *                                   data: { ... }
+ *                                 }
+ *                               -32603 is "internal error", which on its own
+ *                               says nothing, so the message has to be read.
+ *                               Matching on the message is unpleasant and is
+ *                               done deliberately: without it the add is never
+ *                               attempted and a wallet that has never seen the
+ *                               chain simply cannot connect.
+ *
+ * Bradbury never hit any of this because the chain was already in the wallet,
+ * so the switch succeeded and the fallback was dead code in practice.
+ *
+ * Anything else is somebody else's error and is rethrown untouched, including
+ * 4001, the user rejecting the prompt.
+ */
+export function isUnknownChain(err: unknown): boolean {
+  const e = err as any;
+  if (e?.code === 4902) return true;
+  if (e?.data?.originalError?.code === 4902) return true;
+  if (e?.code === -32603) {
+    const message = String(e?.message ?? e?.data?.originalError?.message ?? "");
+    return /unrecognized chain/i.test(message);
+  }
+  return false;
+}
+
+/**
+ * The wallet_addEthereumChain payload for the active network.
+ *
+ * Every value comes from the registry rather than from whatever the wallet
+ * happens to know: a wallet that adds this chain under our name and our RPC
+ * is a wallet that reads the same contract we do.
+ */
+function addChainParams(): Record<string, unknown> {
+  return {
+    chainId: CHAIN_ID_HEX,
+    chainName: active.name,
+    rpcUrls: [active.rpcUrl],
+    nativeCurrency: active.chain.nativeCurrency,
+    // Studio Next has no explorer in its chain definition, so this comes from
+    // the registry; an empty list is valid and some wallets reject a list
+    // containing undefined.
+    blockExplorerUrls: active.explorerTx ? [active.explorerTx] : [],
+  };
+}
+
+/**
  * Puts an already-connected wallet on the active network's chain.
  *
  * Split out of connectWallet because switching network has to do this without
@@ -283,25 +348,30 @@ export async function ensureWalletChain(): Promise<void> {
       method: "wallet_switchEthereumChain",
       params: [{ chainId: CHAIN_ID_HEX }],
     });
-  } catch (err: any) {
-    // 4902 = chain unknown to the wallet; add it, then it is selected.
-    if (err?.code !== 4902) throw err;
-    await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId: CHAIN_ID_HEX,
-          chainName: active.name,
-          rpcUrls: [active.rpcUrl],
-          nativeCurrency: active.chain.nativeCurrency,
-          // Studio Next has no explorer in its chain definition, so this comes
-          // from the registry; an empty list is valid and some wallets reject
-          // a list containing undefined.
-          blockExplorerUrls: active.explorerTx ? [active.explorerTx] : [],
-        },
-      ],
-    });
+    return;
+  } catch (err) {
+    if (!isUnknownChain(err)) throw err;
   }
+
+  // The wallet does not have this chain, so add it. EIP-3085 says a wallet
+  // that adds a chain switches to it, and MetaMask does, but that is a "should"
+  // and not every wallet obeys it, so the result is checked rather than
+  // assumed.
+  await provider.request({
+    method: "wallet_addEthereumChain",
+    params: [addChainParams()],
+  });
+
+  const after: string = await provider.request({ method: "eth_chainId" });
+  if (after === CHAIN_ID_HEX) return;
+
+  // Added but not selected. One more switch, which now names a chain the
+  // wallet knows. A second failure propagates: at that point the wallet is
+  // refusing something it has, which is a real error and not a missing chain.
+  await provider.request({
+    method: "wallet_switchEthereumChain",
+    params: [{ chainId: CHAIN_ID_HEX }],
+  });
 }
 
 /**
