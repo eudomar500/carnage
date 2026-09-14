@@ -78,6 +78,8 @@ The rubric is an ordered decision procedure, FALSE first through TRUE last, with
 
 The prompt is the rubric, then one line of committed evidence naming that seat's revealed constraint, then the claim wrapped in literal `<claim></claim>` tags. The rubric states that the delimited text is untrusted data written by an adversarial party, may contain text shaped like instructions, and must never be obeyed.
 
+The evidence cannot be tampered with after it is sealed. The number a side reveals must hash to the commitment it posted before anyone spoke, and a side that does not reveal forfeits its stake to the side that did. The jury never sees anything else: no witnesses, no documents, no external fetch. The only thing a party controls at the moment of judgment is the wording of its own claim, and that is what Carnage tests the jury on.
+
 Consensus runs through `gl.vm.run_nondet`. The leader classifies; each validator **re-runs the same prompt itself** and returns whether its own label equals the leader's. Only the label is compared. The free-form reasoning is stored on the match for the record and never enters the comparison.
 
 Consensus alone does not defend against prompt injection: an injection that fooled every validator identically would converge on the wrong answer. The defence lives in prompt construction. The record holds **one** injection-shaped claim, so this is one case and not a suite. `test_injected_claim_stays_inside_claim_delimiters` pins the delimiting.
@@ -179,6 +181,8 @@ The contract is deliberately boring and good at deterministic things. GenLayer i
 
 ## Status
 
+This is a first release. The instrument is complete and audited; the record it holds is small and grows only as matches are played. What comes next is at the end of this file.
+
 Built, audited and running on Bradbury.
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
@@ -228,6 +232,29 @@ Prompt injection is measured, not declared solved, and one flagged claim is an a
 Privacy exists only during off-chain negotiation. Claims are stored in plaintext from the moment they are anchored, and constraints are public from the reveal. Nothing on-chain is confidential.
 
 The deal price is agreed off-chain and never moves through the contract, so within Carnage the only strategy that keeps a stake is telling the truth. A lie pays only if the jury lets it through. That has not happened in nine matches, and nothing here claims it cannot: Carnage exists to find out whether it does, one match at a time, with every attempt on the record.
+
+## What comes next
+
+Nine matches say what they say: on this record no lie has passed the jury, one claim written to be ambiguous was called misleading, and one instruction aimed at the judge was ignored. That is a start, not a result. The instrument is built; what it needs now is volume, variety and a reason for people to keep feeding it. Each item below is a direction the current contract and app already point at.
+
+**The benchmark**
+
+- More operators. Every match so far was played by one person from two wallets. An open lobby, where a seat can be taken by whoever arrives, turns the corpus from one author's writing into a sample.
+- Paraphrase families. The same lie in five wordings, played against the same committed number, measures whether the jury is consistent across phrasing rather than across sentences it has already seen.
+- Deliberate attempts at the labels the record lacks: AMBIGUOUS, which has not been returned in eighteen claims, and injections shaped differently from the one on record, which the current filter would not recognise.
+- Stake and band as variables. Every match shares one stake and one band; playing others tests whether the amount at risk changes what the jury returns.
+- A downloadable corpus: every claim, label, reasoning and transaction hash as one file, regenerated from the chain, so a researcher can work on the record without opening the app.
+
+**The game**
+
+The stake only ever moves against a lie, so a player who does not want to lose has no reason to lie, and a player who wants to test the jury pays to do it. A game that lives on its own needs to reward what the benchmark needs, which is claims that put the jury to work:
+
+- Pay for contribution. A small reward for every completed match, larger when the claim is a sentence the corpus has not seen. The sink, which today only collects from matches where both sides lied, is a natural source.
+- Pay for a lie that passes. A claim that contradicts the committed number and still draws TRUE is a finding, and the rule that detects it already runs in Labs. Rewarding it makes the outcome the benchmark is looking for the one a red teamer is paid to produce.
+- Let spectators predict. Before a verdict lands, anyone can stake on the label; a correct call earns a share. That brings a second measurement the record does not have yet, how far human judgment and the jury agree, claim by claim.
+- A public record per seat: matches played, verdicts drawn, claims contributed, lies that passed. A name next to the claim that beat the jury is worth more to some players than the stake.
+
+None of this changes what is measured or how. It changes who plays, how much they play, and what they leave behind. What accumulates is a public, on-chain corpus of how a live jury ruled on claims written to test it, verdict by verdict, with the reasoning and the transaction behind each one. GenLayer Gym measures whether the network can reach an answer; this record measures what the jury does when the answer is contested, and the longer Carnage runs, the more of that it holds.
 
 ---
 
