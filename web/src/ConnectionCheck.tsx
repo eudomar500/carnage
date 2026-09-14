@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
 import {
+  activeNetwork,
   CARNAGE_ADDRESS,
   CHAIN,
   CHAIN_ID_HEX,
@@ -192,7 +193,8 @@ export default function ConnectionCheck() {
     <div className="check">
       <h1>CARNAGE | connection check</h1>
       <p className="sub">
-        Step 1: prove genlayer-js talks to Bradbury, reads <code>get_match</code> on{" "}
+        Step 1: prove genlayer-js talks to {activeNetwork().name}, reads{" "}
+        <code>get_match</code> on{" "}
         <code>{CARNAGE_ADDRESS}</code>, and can sign a write from this browser.
       </p>
 

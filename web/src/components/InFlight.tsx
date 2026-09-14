@@ -1,4 +1,5 @@
 import { explorerTxUrl } from "../chain/txlog";
+import { useNetwork } from "../chain/network-store";
 import type { ActionId } from "../chain/roles";
 import type { InFlight } from "../hooks/useAction";
 
@@ -55,6 +56,9 @@ export default function InFlightNotice({
   inFlight: InFlight;
   onDismiss: () => void;
 }) {
+  // Named, because how long a transaction can sit is a property of the chain
+  // and the two networks differ by an order of magnitude.
+  const { network } = useNetwork();
   const url = inFlight.hash ? explorerTxUrl(inFlight.hash) : null;
 
   return (
@@ -66,8 +70,9 @@ export default function InFlightNotice({
 
       <p className="turn-hint">
         You signed this {elapsed(inFlight.startedAt)} from this browser and the
-        contract has not registered it yet. That is normal on Bradbury, where a
-        transaction can sit for several minutes while validators are replaced.
+        contract has not registered it yet. That is normal on {network.label},
+        where a transaction can sit for several minutes while validators are
+        replaced.
         The form is hidden on purpose: <strong>do not send it again</strong>.
       </p>
 

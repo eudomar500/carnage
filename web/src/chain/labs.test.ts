@@ -3,6 +3,7 @@ import type { MatchState } from "./contract";
 import { ZERO_ADDRESS } from "./roles";
 import {
   agreement,
+  bandNote,
   claimRows,
   convergenceOf,
   convergenceSummary,
@@ -358,5 +359,79 @@ describe("convergence per match", () => {
       ]),
     ]);
     expect(s).toEqual({ matches: 3, withVerdict: 3, attempts: 4, clean: 2, discarded: 1 });
+  });
+});
+
+/**
+ * The LIMITS corpus sentence.
+ *
+ * It was assembled inline and only ever read on a corpus of nine. On a corpus
+ * of one it rendered "1 of them share one pair of revealed constraints;
+ * matches  revealed a pair outside the band.", which is three faults at once:
+ * a plural verb on one, a plural noun with no list, and a claim about an empty
+ * set. These pin the shapes that broke it.
+ */
+describe("bandNote", () => {
+  it("says nothing about constraints on an empty corpus", () => {
+    const note = bandNote(0, 0, []);
+    expect(note).toBe(
+      "No match has been adjudicated yet, so there is nothing here to read as a rate.",
+    );
+    expect(note).not.toMatch(/matches\s+revealed/);
+  });
+
+  it("handles a corpus of one inside the band", () => {
+    // The studio-next case. One match cannot "share" a pair with anything.
+    const note = bandNote(1, 1, []);
+    expect(note).toBe(
+      "One revealed a pair of constraints inside the band. That narrowness is what stops any figure here from being a rate.",
+    );
+    expect(note).not.toContain("share");
+    expect(note).not.toContain("outside");
+  });
+
+  it("handles a corpus of one outside the band", () => {
+    const note = bandNote(1, 0, ["4"]);
+    expect(note).toBe(
+      "Match 4 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
+    );
+    expect(note).not.toMatch(/\bmatches\b/);
+  });
+
+  it("handles many, with some outside", () => {
+    expect(bandNote(9, 8, ["9"])).toBe(
+      "8 of them share one pair of revealed constraints; match 9 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
+    );
+    expect(bandNote(9, 7, ["8", "9"])).toBe(
+      "7 of them share one pair of revealed constraints; matches 8, 9 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
+    );
+  });
+
+  it("drops the outside clause entirely when none are outside", () => {
+    const note = bandNote(9, 9, []);
+    expect(note).toBe(
+      "9 of them share one pair of revealed constraints. That narrowness is what stops any figure here from being a rate.",
+    );
+    expect(note).not.toContain(";");
+    expect(note).not.toContain("outside");
+  });
+
+  it("never leaves a dangling clause or a doubled separator", () => {
+    const shapes: [number, number, string[]][] = [
+      [0, 0, []],
+      [1, 1, []],
+      [1, 0, ["1"]],
+      [2, 1, ["2"]],
+      [9, 9, []],
+      [9, 0, ["1", "2"]],
+    ];
+    for (const [adj, inside, outside] of shapes) {
+      const note = bandNote(adj, inside, outside);
+      expect(note).not.toMatch(/;\s*\./);
+      expect(note).not.toMatch(/\s{2,}/);
+      expect(note.trim()).toBe(note);
+      expect(note.endsWith(".")).toBe(true);
+      expect(note.charAt(0)).toBe(note.charAt(0).toUpperCase());
+    }
   });
 });

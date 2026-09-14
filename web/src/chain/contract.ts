@@ -1,5 +1,5 @@
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
-import { CARNAGE_ADDRESS, readClient, writeClient } from "./client";
+import { capabilities, CARNAGE_ADDRESS, readClient, writeClient } from "./client";
 import { quoteFees, withFees } from "./fees";
 import { decodeGenvmError, tagStage } from "./errors";
 
@@ -152,7 +152,36 @@ export async function getMatch(
 
 /** A match id that has never been created reads back as a UserError. */
 export function isUnknownMatch(err: unknown): boolean {
-  return decodeGenvmError(err).includes("unknown match_id");
+  // Bradbury's node puts the GenVM return data in the error, so the contract's
+  // own words come back and the test is exact.
+  if (decodeGenvmError(err).includes("unknown match_id")) return true;
+
+  // Studio Next's does not. The same read of an unminted id fails with
+  // details "execution failed" and nothing else: no ReturnData, no UserError
+  // text, and a viem shortMessage of "Missing or invalid parameters." So the
+  // walk that discovers matches saw its stop condition as a failed read and
+  // reported the list as possibly incomplete, on a network with one match.
+  //
+  // On a network like that, a reverted get_match can only be this. get_match
+  // reaches exactly one raise, _get_match's "unknown match_id", and has no
+  // other failure of its own, so "the contract ran and refused" and "that id
+  // does not exist" are the same statement for this call.
+  //
+  // The test is still narrow on purpose. It requires the node's own
+  // "execution failed", which is the node saying the GenVM ran and reverted.
+  // A transport fault does not say that: a timeout, a refused connection or a
+  // rate limit arrives as a different error with a different shape, and stays
+  // a failed read.
+  if (!capabilities().revertDataInReads && isExecutionFailure(err)) return true;
+
+  return false;
+}
+
+/** The node reporting that the contract ran and reverted, with no detail. */
+function isExecutionFailure(err: unknown): boolean {
+  const e = err as any;
+  const detail = String(e?.details ?? e?.cause?.message ?? "");
+  return /^execution failed/i.test(detail.trim());
 }
 
 export type MatchView = {

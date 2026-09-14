@@ -313,7 +313,7 @@ export default function MatchApp({
 
   if (!preview && loading && !view && !notFound) {
     return shell(
-      <p className="app-boot">READING MATCH {matchId} FROM BRADBURY...</p>,
+      <p className="app-boot">READING MATCH {matchId} FROM {net.label}...</p>,
     );
   }
 
@@ -344,7 +344,7 @@ export default function MatchApp({
         {unreachable ? (
           <>
             <p className="boot-detail">
-              GenLayer Bradbury is not answering right now. The match is
+              {net.name} is not answering right now. The match is
               unaffected and the read can be tried again.
             </p>
             <button

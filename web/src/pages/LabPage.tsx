@@ -10,6 +10,7 @@ import { useNetwork } from "../chain/network-store";
 import { NETWORKS } from "../chain/networks";
 import {
   agreement,
+  bandNote,
   claimRows,
   convergenceSummary,
   gradingMatrix,
@@ -340,7 +341,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   fetched by id through get_match when this page loads, from 1
                   upward until the contract reports an unknown id. Each
                   adjudicated match contributes two claims, one per seat. The
-                  contract runs on GenLayer's Bradbury testnet.{" "}
+                  contract runs on {network.name}.{" "}
                   <StakeNote spread={stakes} />
                 </li>
                 <li>
@@ -759,12 +760,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 <li>
                   {adjudicated} {plural(adjudicated, "match", "matches")}, played
                   from two wallets, on one price band, one stake and one deal
-                  price. {insideBand} of them share one pair of revealed
-                  constraints;{" "}
-                  {plural(outsideBand.length, "match", "matches")}{" "}
-                  {outsideBand.join(", ")} revealed a pair outside the band.
-                  That narrowness is what stops any figure here from being a
-                  rate.
+                  price. {bandNote(adjudicated, insideBand, outsideBand)}
                 </li>
                 <li>
                   {agree.verifiable} scored claims, drawn from{" "}

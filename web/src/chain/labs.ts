@@ -398,3 +398,51 @@ export function convergenceSummary(all: MatchConvergence[]): ConvergenceSummary 
     discarded: all.reduce((n, c) => n + c.discarded, 0),
   };
 }
+
+/**
+ * The LIMITS sentence about how narrow the corpus is.
+ *
+ * Built here rather than assembled inline because it has to survive a corpus
+ * of nought and a corpus of one, and it did not. On studio-next, with exactly
+ * one match, it rendered:
+ *
+ *   "1 of them share one pair of revealed constraints; matches  revealed a
+ *    pair outside the band."
+ *
+ * Three faults in one line: "1 of them share", a plural noun with no list
+ * behind it, and a clause asserting something about an empty set. A single
+ * match also cannot "share" a pair of constraints with anything, so the
+ * wording changes rather than just its number.
+ *
+ * `outsideBand` is match ids as strings, in the order the page lists them.
+ */
+export function bandNote(
+  adjudicated: number,
+  insideBand: number,
+  outsideBand: string[],
+): string {
+  const RATE = "That narrowness is what stops any figure here from being a rate.";
+
+  if (adjudicated === 0) {
+    return "No match has been adjudicated yet, so there is nothing here to read as a rate.";
+  }
+
+  const inside =
+    insideBand === 0
+      ? null
+      : insideBand === 1
+        ? "one revealed a pair of constraints inside the band"
+        : `${insideBand} of them share one pair of revealed constraints`;
+
+  const outside =
+    outsideBand.length === 0
+      ? null
+      : outsideBand.length === 1
+        ? `match ${outsideBand[0]} revealed a pair outside it`
+        : `matches ${outsideBand.join(", ")} revealed a pair outside it`;
+
+  const clauses = [inside, outside].filter(Boolean).join("; ");
+  if (!clauses) return RATE;
+
+  return `${clauses.charAt(0).toUpperCase()}${clauses.slice(1)}. ${RATE}`;
+}

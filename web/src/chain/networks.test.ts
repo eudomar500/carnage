@@ -53,14 +53,24 @@ describe("network registry", () => {
       hasTxLog: true,
       hasIndex: true,
       withdrawals: true,
+      revertDataInReads: true,
       feesOnWrite: false,
     });
     expect(NETWORKS["studio-next"].capabilities).toEqual({
       hasTxLog: false,
       hasIndex: false,
       withdrawals: false,
+      revertDataInReads: false,
       feesOnWrite: true,
     });
+  });
+
+  it("records which node returns revert data on a failed read", () => {
+    // Bradbury returns the GenVM ReturnData, so a contract revert can be read
+    // out of the error. Studio Next returns "execution failed" and nothing
+    // more, which is what makes the discovery stop condition ambiguous there.
+    expect(NETWORKS.bradbury.capabilities.revertDataInReads).toBe(true);
+    expect(NETWORKS["studio-next"].capabilities.revertDataInReads).toBe(false);
   });
 
   it("supplies an explorer base for Studio Next, whose chain definition has none", () => {

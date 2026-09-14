@@ -39,6 +39,16 @@ import { studioDevnet } from "genlayer-js-next/chains";
  *                contract's own field is what the claim panel actually reads,
  *                so the chain stays the authority.
  *
+ *   revertDataInReads
+ *                a failed read carries the contract's own revert bytes.
+ *                True on Bradbury, whose node returns
+ *                "execution failed: &genvm.VMResult{Kind:0x1, ReturnData:
+ *                []uint8{...}}" with the UserError text inside, which is what
+ *                lets a caller tell "unknown match_id" from a node fault.
+ *                False on Studio Next, where the same read fails with nothing
+ *                but "execution failed" and the two are indistinguishable from
+ *                the error alone. See isUnknownMatch in chain/contract.ts.
+ *
  *   feesOnWrite  every write must carry a fee deposit quoted by the SDK.
  *                Consensus v0.6 rejects a zero deposit with
  *                FeeValueMustBeNonZero, and a call that emits a message also
@@ -58,6 +68,7 @@ export type Capabilities = {
   hasTxLog: boolean;
   hasIndex: boolean;
   withdrawals: boolean;
+  revertDataInReads: boolean;
   feesOnWrite: boolean;
 };
 
@@ -112,6 +123,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasTxLog: true,
       hasIndex: true,
       withdrawals: true,
+      revertDataInReads: true,
       feesOnWrite: false,
     },
     blurb: "The durable record. Every match ever played by Carnage is here.",
@@ -140,6 +152,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasTxLog: false,
       hasIndex: false,
       withdrawals: false,
+      revertDataInReads: false,
       feesOnWrite: true,
     },
     blurb:
