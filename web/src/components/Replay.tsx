@@ -4,6 +4,7 @@ import { BRANCHES, isResolved } from "../chain/lifecycle";
 import { settlementSplit } from "../chain/rubric";
 import { explorerTxUrl, requiredMethods, type LinkedMethod } from "../chain/txlog";
 import { useMatchTransactions, type TxLookup } from "../hooks/useMatchTransactions";
+import { useNetwork } from "../chain/network-store";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
 
 /**
@@ -476,10 +477,17 @@ export default function Replay({ match }: { match: MatchState | null }) {
     }) : []),
     [match, settled, noReveal, inconclusive, refunded],
   );
+  // The frames themselves are built from get_match and are identical on every
+  // network. Only the verification strip under them needs a transaction log,
+  // so on a network without one the scan is never enabled: the lookup stays
+  // idle, ProofLinks renders nothing, and no request is made. The committed
+  // index and the tail scan are not consulted or disabled from here; they
+  // simply are not reached.
+  const { network, capabilities } = useNetwork();
   const lookup = useMatchTransactions(
     match ? match.match_id : null,
     required,
-    Boolean(frames[at]?.proof),
+    capabilities.hasTxLog && Boolean(frames[at]?.proof),
   );
 
   if (!match) {
@@ -555,7 +563,16 @@ export default function Replay({ match }: { match: MatchState | null }) {
           </div>
           <p className="rep-caption">{frame.caption}</p>
           <div className="rep-body">{frame.body}</div>
-          {frame.proof ? <ProofLinks methods={frame.proof} lookup={lookup} /> : null}
+          {frame.proof ? (
+            capabilities.hasTxLog ? (
+              <ProofLinks methods={frame.proof} lookup={lookup} />
+            ) : (
+              <p className="proof proof-miss">
+                {network.label} exposes no transaction log, so this frame carries no
+                proof links. The record above is read from contract state.
+              </p>
+            )
+          ) : null}
           <div className="rep-nav">
             <button
               type="button"

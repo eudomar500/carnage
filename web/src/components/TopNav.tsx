@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import NotificationBell from "./NotificationBell";
+import NetworkSwitch, { NetworkFaucet } from "./NetworkSwitch";
 import type { NotificationFeed } from "../hooks/useNotifications";
 import { hrefFor } from "../lib/route";
 import { shortAddress } from "../lib/format";
@@ -161,6 +162,13 @@ export default function TopNav({
 
       {isApp ? null : (
         <div className="nav-right">
+          {/* The switch, not a read-only label. Every view is about one chain
+              at a time and says which, so every view has to let you change it:
+              the lab in particular measures whichever network is active, and
+              a reader there had no way to move without going to the app and
+              back. Compact because this nav already carries the section links
+              and the call to action. */}
+          <NetworkSwitch compact />
           {/*
             No connect button here. The landing performs no chain action, so a
             connection made from it would have nothing to spend itself on, and
@@ -179,6 +187,16 @@ export default function TopNav({
           </a>
         </div>
       )}
+
+      {/* Pushed to the right edge with the wallet, so the chain you are on and
+          the account you are on read as one status. margin-left:auto lives on
+          the wallet chip, so this has to come first to sit beside it.
+          The faucet stays here and only here: it answers "how do I fund a
+          stake", which is a question you have in the app and nowhere else. */}
+      {isApp ? <span className="nav-net">
+        <NetworkSwitch />
+        <NetworkFaucet />
+      </span> : null}
 
       {isApp && wallet && notifications && onOpenMatch ? (
         <NotificationBell feed={notifications} onOpenMatch={onOpenMatch} />

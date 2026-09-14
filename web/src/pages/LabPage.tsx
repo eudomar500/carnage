@@ -5,7 +5,9 @@ import GradingMatrix from "../components/labs/GradingMatrix";
 import ConvergenceChart from "../components/labs/ConvergenceChart";
 import ClaimTable, { type VerdictLookup } from "../components/labs/ClaimTable";
 import RoundDrill from "../components/labs/RoundDrill";
-import { CARNAGE_ADDRESS, CHAIN } from "../chain/client";
+import { CARNAGE_ADDRESS } from "../chain/client";
+import { useNetwork } from "../chain/network-store";
+import { NETWORKS } from "../chain/networks";
 import {
   agreement,
   claimRows,
@@ -99,6 +101,8 @@ function Tag({ kind }: { kind: "live" | "case" }) {
 }
 
 export default function LabPage({ nav }: { nav: NavShell }) {
+  const { network, capabilities } = useNetwork();
+  const onRecordNetwork = network.id === NETWORKS.bradbury.id;
   const { matches, coverage, loading, found, error } = useLabMatches();
   // The consensus walk is the slow tier. It starts on its own once the matches
   // are in and fills the transaction hashes in as it reaches them.
@@ -163,15 +167,27 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const lookup: VerdictLookup = {
     verdicts: adj.verdicts,
     scanning: adj.scanning || !adj.done,
-    missingNote: `no adjudicate transaction found for this match, in the committed index through block ${adj.snapshotBlock.toLocaleString("en-US")} or in the live blocks after it`,
+    // The note has to describe the network being read, not the one the
+    // committed index was built from. Quoting a snapshot block on a network
+    // with no transaction log would put a Bradbury block number against every
+    // row of another chain's claims, which is the one thing this page must
+    // never do.
+    missingNote: capabilities.hasTxLog
+      ? `no adjudicate transaction found for this match, in the committed index through block ${adj.snapshotBlock.toLocaleString("en-US")} or in the live blocks after it`
+      : `${network.label} exposes no transaction log, so no verdict here carries a transaction`,
   };
 
-  const designedRow = rows.find(
-    (r) => r.matchId === AMBIGUITY_CASE.matchId && r.role === AMBIGUITY_CASE.role,
-  );
-  const injectionRow = rows.find(
-    (r) => r.matchId === INJECTION_CASE.matchId && r.role === INJECTION_CASE.role,
-  );
+  // Both case studies name a specific match id on the record network. An id is
+  // not portable: match 3 on another deployment is a different match, so
+  // looking these up elsewhere would attach fixed commentary about one match to
+  // an unrelated one. They are found only on the network they were written
+  // about, and the sections simply do not render anywhere else.
+  const designedRow = onRecordNetwork
+    ? rows.find((r) => r.matchId === AMBIGUITY_CASE.matchId && r.role === AMBIGUITY_CASE.role)
+    : undefined;
+  const injectionRow = onRecordNetwork
+    ? rows.find((r) => r.matchId === INJECTION_CASE.matchId && r.role === INJECTION_CASE.role)
+    : undefined;
   // The tag is printed once per rendered case section, so the count that
   // announces them is taken from the same two conditions.
   const caseSections = [designedRow, injectionRow].filter(Boolean).length;
@@ -218,16 +234,27 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             Carnage is a negotiation game in which two seats stake against
             each other and each anchors a natural-language claim on-chain.{" "}
             <StakeNote spread={stakes} /> An AI jury running across
-            independent validators on GenLayer's Bradbury testnet labels each
+            independent validators on {network.name} labels each
             claim against the constraint that side revealed, and the labels move
             the stakes. This page is the record of what that jury returned. Match
-            data is read from the contract on every visit; the transaction
-            history behind each verdict comes from{" "}
-            <a className="lab-inline-link" href="#sources">
-              two sources, both on-chain
-            </a>
+            data is read from the contract on every visit
+            {capabilities.hasTxLog ? (
+              <>
+                ; the transaction history behind each verdict comes from{" "}
+                <a className="lab-inline-link" href="#sources">
+                  two sources, both on-chain
+                </a>
+              </>
+            ) : null}
             .
           </p>
+          {!onRecordNetwork ? (
+            <p className="lab-note">
+              Reading {network.name}. Convergence and the matches read closely below
+              are measured on {NETWORKS.bradbury.name} only, because this network
+              exposes no transaction log.
+            </p>
+          ) : null}
 
           {!loading && !error ? (
             <>
@@ -505,10 +532,18 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </section>
             ) : null}
 
-            {/* 8. Consensus */}
+            {/* 8. Consensus. Needs the transaction log, which not every network
+                has; see the capability note in chain/networks.ts. */}
             <section className="lab-section" id="sources">
               <Tag kind="live" />
               <h2 className="lab-h2">WHAT IT TOOK TO AGREE</h2>
+              {!capabilities.hasTxLog ? (
+                <p className="lab-body">
+                  Convergence is measured on {NETWORKS.bradbury.label} only, because
+                  this network exposes no transaction log.
+                </p>
+              ) : null}
+              {capabilities.hasTxLog ? (
               <p className="lab-body">
                 A verdict is a set of validators running the same job until
                 enough of them agree, and sometimes that takes more than one
@@ -521,8 +556,9 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 in contract state, so this section reads the consensus contract's
                 own transaction log instead.
               </p>
+              ) : null}
 
-              {adj.byMatch.length ? (
+              {capabilities.hasTxLog && adj.byMatch.length ? (
                 <>
                   <p className="lab-stat">
                     <strong>{convSummary.attempts}</strong> adjudicate transactions across{" "}
@@ -550,14 +586,14 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 </>
               ) : null}
 
-              {adj.scanning && adj.total > 0 ? (
+              {capabilities.hasTxLog && adj.scanning && adj.total > 0 ? (
                 <p className="lab-note">
                   Reading the blocks after the index, window {adj.progress} of{" "}
                   {adj.total}.
                 </p>
               ) : null}
               {adj.degraded ? <p className="act-warn">{adj.degraded}</p> : null}
-              {adj.done ? (
+              {capabilities.hasTxLog && adj.done ? (
                 <p className="lab-note">
                   Two sources, both on-chain. Every transaction through block{" "}
                   {adj.snapshotBlock.toLocaleString("en-US")} is in an index
@@ -761,19 +797,42 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   two ids past the highest one it knows, so three or more matches
                   created inside that window can take an extra visit to appear.
                 </li>
+                {!onRecordNetwork ? (
+                  <li>
+                    Every figure above is measured on {network.name}. Convergence,
+                    the transaction links and the two matches read closely are
+                    pinned to {NETWORKS.bradbury.name} and are not shown here,
+                    because this network exposes no transaction log and a match id
+                    on it names a different match.
+                  </li>
+                ) : null}
               </ul>
             </section>
 
             <footer className="lab-foot">
               <p className="lab-note">
-                Contract <code>{CARNAGE_ADDRESS}</code> on {CHAIN.name}. Every match
-                figure here is read from get_match on each visit. The transaction
-                behind each verdict comes from a committed index plus a live scan
-                of the blocks after it, described under{" "}
-                <a className="lab-inline-link" href="#sources">
-                  two sources, both on-chain
-                </a>
-                . No figure on this page is hand-entered.
+                {/* network.name, not CHAIN.name. The SDK calls this chain
+                    "GenLayer Studio Devnet", which is a third name for a
+                    network the nav calls STUDIO NEXT and the lede calls
+                    GenLayer Studio Next. One page, one name for the chain. */}
+                Contract <code>{CARNAGE_ADDRESS}</code> on {network.name}. Every match
+                figure here is read from get_match on each visit.{" "}
+                {capabilities.hasTxLog ? (
+                  <>
+                    The transaction behind each verdict comes from a committed index
+                    plus a live scan of the blocks after it, described under{" "}
+                    <a className="lab-inline-link" href="#sources">
+                      two sources, both on-chain
+                    </a>
+                    .{" "}
+                  </>
+                ) : (
+                  <>
+                    This network exposes no transaction log, so no verdict here carries
+                    a transaction link.{" "}
+                  </>
+                )}
+                No figure on this page is hand-entered.
               </p>
             </footer>
           </>

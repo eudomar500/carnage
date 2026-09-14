@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CARNAGE_ADDRESS, CHAIN, readClient } from "../chain/client";
+import { capabilities, CARNAGE_ADDRESS, CHAIN, readClient } from "../chain/client";
 import { coverageNote, discoverAllMatches, type Discovery } from "../chain/discovery";
 import type { MatchState } from "../chain/contract";
 import {
@@ -233,6 +233,26 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
     run.current = mine;
 
     void (async () => {
+      // A network with no transaction log has nothing for this tier to read.
+      // Checked before the chain definition, because Studio Next does publish
+      // a consensus address and an ABI; what it does not do is answer
+      // eth_getLogs, so the walk below would spend every window to return
+      // nothing and report it as a degraded scan rather than as absent.
+      if (!capabilities().hasTxLog) {
+        setFeed({
+          ...EMPTY_FEED,
+          // Explicitly not SNAPSHOT_BLOCK. The committed index is Bradbury's,
+          // so its snapshot block is not a fact about this network, and it
+          // must not reach a rendered sentence here. Zero reads as "no index",
+          // which is the truth; callers gate on the capability rather than on
+          // this number, so nothing compares against it.
+          snapshotBlock: 0,
+          degraded: null,
+          done: true,
+        });
+        return;
+      }
+
       const event = newTransactionEvent();
       const consensus = CHAIN.consensusMainContract?.address as `0x${string}` | undefined;
       if (!event || !consensus) {
@@ -385,6 +405,10 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
   // known at that point, so it is shown immediately and only the tail is
   // reported as pending. Derived here rather than written from the effect,
   // which would cost a render that only says "working".
+  // The committed index is Bradbury's, keyed to its contract. On any other
+  // network it describes a different deployment, so it is not merged in as a
+  // head start; the feed there is simply empty and the page says why.
+  if (!capabilities().hasIndex) return feed ?? { ...EMPTY_FEED, snapshotBlock: 0, done: true };
   return feed ?? { ...EMPTY_FEED, ...feedFrom(indexedAttempts()), scanning: enabled };
 }
 
@@ -425,7 +449,12 @@ function cachedDay(hash: string | undefined): string | null {
  * until the index is regenerated.
  */
 export function useSettlementDate(): CorpusDate | null {
-  const latest = latestSettlement();
+  // Gated rather than left to degrade. The committed index empties itself when
+  // it does not match the contract, so this would return null on another
+  // network anyway; asking is still a read of a constant that describes a
+  // different deployment, and not asking is what makes that statement simple.
+  // Computed here, not in an early return: the hooks below must run either way.
+  const latest = capabilities().hasIndex ? latestSettlement() : null;
   const hash = latest?.hash;
   const [day, setDay] = useState<string | null>(() => cachedDay(hash));
 

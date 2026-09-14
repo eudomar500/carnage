@@ -7,6 +7,7 @@ import { findPost } from "./content/posts";
 import type { NavShell } from "./components/TopNav";
 import { useNotifications } from "./hooks/useNotifications";
 import { connectWallet, disconnectWallet, watchWallet } from "./chain/client";
+import { NetworkProvider } from "./chain/network-context";
 import { hrefFor, routeFromUrl, type Route } from "./lib/route";
 import { previewFromUrl } from "./dev/preview";
 import "./styles.css";
@@ -37,7 +38,7 @@ function scrollAfterPaint(hash?: string): void {
   });
 }
 
-export default function App() {
+function AppRoutes() {
   const [route, setRoute] = useState<Route>(routeFromUrl);
   const [wallet, setWallet] = useState<`0x${string}` | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -185,5 +186,20 @@ export default function App() {
       onEntry={onEntry}
       onCreated={onCreated}
     />
+  );
+}
+
+/**
+ * The network sits above the router.
+ *
+ * One network per page load, and switching reloads, so there is nothing here
+ * to remount: the whole document is replaced. The provider exists to give the
+ * nav and the views a name to render, not to move the app between chains.
+ */
+export default function App() {
+  return (
+    <NetworkProvider>
+      <AppRoutes />
+    </NetworkProvider>
   );
 }

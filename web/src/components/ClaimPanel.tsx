@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { confirmationFor } from "../chain/confirm";
-import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
+import { sendClaim, WITHDRAWALS_DISABLED_NOTE, type ClaimGate, type MatchState } from "../chain/contract";
 import type { Role } from "../chain/roles";
 import { useAction } from "../hooks/useAction";
 import { explorerTxUrl } from "../chain/txlog";
@@ -59,6 +59,34 @@ export default function ClaimPanel(p: ClaimPanelProps) {
     return (
       <div className="claim">
         <InFlightNotice inFlight={a.inFlight} onDismiss={a.dismiss} />
+      </div>
+    );
+  }
+
+  /*
+    Credited, and nothing to press.
+
+    No button rather than a disabled one: a disabled claim button reads as
+    "not yet", and this is not a timing problem that waiting fixes. The
+    balance is real and stays on the match, so it is shown at full weight;
+    what is missing is the transfer, and the sentence says so.
+
+    The amount is printed rather than hidden because the point of the network
+    is to demonstrate that settlement credited the right party. Attempting the
+    claim anyway is specifically avoided: the fee estimator on this network
+    refuses the call before it is sent and reports only "execution failed",
+    so the reader would be shown a generic error instead of this explanation.
+  */
+  if (p.gate.state === "withdrawals-disabled") {
+    return (
+      <div className="claim">
+        <div className="claim-btn claim-btn--credited" aria-disabled="true">
+          CREDITED
+          <span className="claim-amt">
+            {formatToken(p.gate.amount)} {TOKEN_SYMBOL}
+          </span>
+        </div>
+        <p className="claim-reason">{WITHDRAWALS_DISABLED_NOTE}</p>
       </div>
     );
   }

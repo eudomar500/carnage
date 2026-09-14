@@ -13,7 +13,7 @@ import {
   refundBeforeLock,
   reveal,
 } from "../chain/actions";
-import { sendClaim, type ClaimGate, type MatchState } from "../chain/contract";
+import { sendClaim, WITHDRAWALS_DISABLED_NOTE, type ClaimGate, type MatchState } from "../chain/contract";
 import { confirmationFor } from "../chain/confirm";
 import { forceSettleGate, formatWait } from "../chain/grace";
 import { noteSinkTarget } from "../chain/journal";
@@ -407,6 +407,21 @@ export function ClaimActionPanel({
 
   if (a.inFlight) return <InFlightNotice inFlight={a.inFlight} onDismiss={a.dismiss} />;
 
+  // Credited on a deployment that cannot pay. Reported, never offered: see
+  // ClaimPanel for why there is no disabled button here, and why the claim is
+  // not attempted anyway (the fee estimator on such a network refuses the call
+  // before it is sent and reports only "execution failed").
+  if (gate.state === "withdrawals-disabled") {
+    return (
+      <div className="panel-form">
+        <p className="turn-hint">
+          Settlement credited {formatToken(gate.amount)} {TOKEN_SYMBOL} in this match.{" "}
+          {WITHDRAWALS_DISABLED_NOTE}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="panel-form">
       <p className="turn-hint">
@@ -575,6 +590,21 @@ export function SinkClaimPanel({ wallet, match, role, gate, refresh }: PanelProp
   const ready = gate.state === "ready";
 
   if (a.inFlight) return <InFlightNotice inFlight={a.inFlight} onDismiss={a.dismiss} />;
+
+  // Credited on a deployment that cannot pay. Reported, never offered: see
+  // ClaimPanel for why there is no disabled button here, and why the claim is
+  // not attempted anyway (the fee estimator on such a network refuses the call
+  // before it is sent and reports only "execution failed").
+  if (gate.state === "withdrawals-disabled") {
+    return (
+      <div className="panel-form">
+        <p className="turn-hint">
+          Settlement credited {formatToken(gate.amount)} {TOKEN_SYMBOL} in this match.{" "}
+          {WITHDRAWALS_DISABLED_NOTE}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="panel-form">

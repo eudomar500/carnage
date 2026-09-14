@@ -176,6 +176,91 @@ body {
 }
 .nav-wallet-addr { color: var(--ink); }
 
+/* ---------- network control ------------------------------------------ */
+/*
+  Sits with the wallet rather than in the section links: it is a statement
+  about which chain you are on, not a place to navigate to. Borrows the
+  wallet chip's proportions so the two read as one status cluster, and stays
+  quiet until something is active.
+*/
+.net-switch {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.net-switch-key {
+  color: var(--ink-dim);
+  font-size: 9.5px; letter-spacing: 0.18em;
+  padding-right: 2px;
+}
+.net-opt {
+  font: inherit;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-dim);
+  font-size: 10.5px; letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.net-opt:hover { color: var(--ink); }
+.net-opt--on {
+  color: var(--crimson);
+  border-color: var(--crimson-dim);
+  background: rgba(224, 36, 28, 0.08);
+}
+
+/* Compact form for the landing and post navs, which already carry the section
+   links and LAUNCH APP. Same control, same hit targets; the standing NETWORK
+   label goes and the border lightens so it reads as status beside the wallet
+   rather than as a second call to action competing with the crimson one. */
+.net-switch--compact { padding: 4px 6px; gap: 4px; border-color: rgba(255, 255, 255, 0.1); }
+.net-switch--compact .net-opt { padding: 4px 8px; font-size: 10px; }
+
+/* Takes the auto margin so the control, bell and wallet form one right-hand
+   cluster; the wallet chip's own margin-left:auto then collapses to nothing. */
+.nav-net { margin-left: auto; display: inline-flex; align-items: center; }
+
+/* A credited-but-unclaimable balance. Reads as a statement, not a control:
+   no pointer, no hover, and the neutral border rather than the ready green. */
+.claim-btn--credited {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--ink);
+  cursor: default;
+}
+
+/* The network line in the match badge. Quieter than the id beneath it: it is
+   context for the screenshot, not the thing being identified. */
+.badge-value--net { color: var(--ink-dim); letter-spacing: 0.16em; }
+
+/* Funding, per network. A link where one exists, a statement where none is
+   needed; both stay quiet next to the control they belong to. */
+.net-faucet {
+  margin-left: 10px;
+  color: var(--ink-dim);
+  font-size: 10px; letter-spacing: 0.16em;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  transition: color 0.18s, border-color 0.18s;
+}
+a.net-faucet:hover { color: var(--ink); border-color: rgba(255, 255, 255, 0.4); }
+.net-faucet--none { border-bottom: 0; cursor: help; }
+
+@media (max-width: 900px) {
+  .net-faucet { display: none; }
+}
+
+/* The nav is a single row; below the app breakpoint the control wraps under
+   the wallet instead of squeezing the section links off the end. */
+@media (max-width: 900px) {
+  .net-switch-key { display: none; }
+  .net-opt { padding: 5px 7px; letter-spacing: 0.1em; }
+  /* Below this the landing row cannot hold links, control and CTA at once.
+     The control stays: it says which chain the page is describing. */
+  .nav-right .net-switch--compact { padding: 3px 4px; }
+  .nav-right .net-switch--compact .net-opt { padding: 4px 6px; letter-spacing: 0.08em; }
+}
+
 /* ---------- hero layout ---------------------------------------------- */
 
 .hero {

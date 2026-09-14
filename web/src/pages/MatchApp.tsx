@@ -16,6 +16,7 @@ import { reconcile } from "../chain/journal";
 import { seatOf, type Role } from "../chain/roles";
 import { derivePhase, isStrike, judgeMood, type JudgeMood } from "../chain/phase";
 import { CARNAGE_ADDRESS } from "../chain/client";
+import { useNetwork } from "../chain/network-store";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
 import { PREVIEWS, type PreviewSelection } from "../dev/preview";
 import { SpeakerOff, SpeakerOn } from "../components/Icons";
@@ -104,6 +105,7 @@ export default function MatchApp({
   onEntry,
   onCreated,
 }: MatchAppProps) {
+  const { network: net } = useNetwork();
   const { view, notFound, error, errorKind, degraded, loading, tick, refresh } = useMatch(matchId);
 
   const effective = preview ? preview.scenario.state : view?.accepted ?? null;
@@ -402,6 +404,11 @@ export default function MatchApp({
         </button>
 
         <div className="badge badge--match">
+          {/* The chain, on the match itself. A match id means a different match
+              on each network and the addresses differ by two characters, so a
+              screenshot of this badge has to name the network outright. */}
+          <div className="badge-label">NETWORK</div>
+          <div className="badge-value badge-value--net">{net.label}</div>
           <div className="badge-label">MATCH ID</div>
           <div className="badge-value">
             0xCARNAGE::{shortAddress(CARNAGE_ADDRESS, 4, 4).replace("0x", "")} | #{`${m.match_id}`}
