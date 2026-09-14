@@ -54,28 +54,21 @@ export default function NetworkSwitch({ compact = false }: { compact?: boolean }
 }
 
 /**
- * Where GEN comes from on this network, or why it does not need to.
+ * Where GEN comes from on this network.
  *
  * Sits with the network control because the answer changes with it, and
  * because a reader who has just switched is exactly the reader about to
- * wonder how to fund a stake. Both networks say something: a chain with no
- * faucet link still owes an explanation, and silence there would read as a
- * missing feature rather than as a deliberate difference.
+ * wonder how to fund a stake. Every network has a link: Studio Next spends
+ * nothing, but a wallet that reads a zero balance will not sign there either,
+ * so an address needs funding on both chains and the title says why.
  */
 export function NetworkFaucet() {
   const { network } = useNetwork();
   const { href, note } = network.faucet;
 
-  if (href) {
-    return (
-      <a className="net-faucet" href={href} target="_blank" rel="noreferrer noopener" title={note}>
-        FAUCET
-      </a>
-    );
-  }
   return (
-    <span className="net-faucet net-faucet--none" title={note}>
-      NO FAUCET NEEDED
-    </span>
+    <a className="net-faucet" href={href} target="_blank" rel="noreferrer noopener" title={note}>
+      FAUCET
+    </a>
   );
 }

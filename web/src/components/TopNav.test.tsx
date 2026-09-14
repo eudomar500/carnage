@@ -103,6 +103,21 @@ describe("the faucet stays where it was", () => {
     expect(markup({ variant: "app" })).toContain("net-faucet");
   });
 
+  /**
+   * There is no second rendering path any more.
+   *
+   * The faucet used to render as inert text reading "NO FAUCET NEEDED" on a
+   * network whose entry carried no href. Every network links to a faucet now,
+   * so the only shape is an anchor, and the note rides on it as the title.
+   */
+  it("renders as a link on the active network", () => {
+    const html = markup({ variant: "app" });
+    expect(html).toContain('<a class="net-faucet"');
+    expect(html).toContain("FAUCET");
+    expect(html).not.toContain("NO FAUCET NEEDED");
+    expect(html).not.toContain("net-faucet--none");
+  });
+
   it("is absent from the landing and post navs", () => {
     expect(markup({ variant: "landing" })).not.toContain("net-faucet");
     expect(markup({ variant: "post" })).not.toContain("net-faucet");

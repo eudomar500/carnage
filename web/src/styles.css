@@ -249,8 +249,8 @@ body {
    context for the screenshot, not the thing being identified. */
 .badge-value--net { color: var(--ink-dim); letter-spacing: 0.16em; }
 
-/* Funding, per network. A link where one exists, a statement where none is
-   needed; both stay quiet next to the control they belong to. */
+/* Funding, per network. One link on every network, kept quiet next to the
+   control it belongs to; the title says what it funds and why. */
 .net-faucet {
   margin-left: 10px;
   color: var(--ink-dim);
@@ -260,7 +260,6 @@ body {
   transition: color 0.18s, border-color 0.18s;
 }
 a.net-faucet:hover { color: var(--ink); border-color: rgba(255, 255, 255, 0.4); }
-.net-faucet--none { border-bottom: 0; cursor: help; }
 
 @media (max-width: 900px) {
   .net-faucet { display: none; }

@@ -37,7 +37,9 @@ import { studioDevnet } from "genlayer-js-next/chains";
  *                claim() before it touches a balance. This flag is the app's
  *                copy of the same fact, used to decide what to offer; the
  *                contract's own field is what the claim panel actually reads,
- *                so the chain stays the authority.
+ *                so the chain stays the authority. Nothing debits a sender
+ *                there either, which is why funding an address on that network
+ *                is still not optional: see feesOnWrite.
  *
  *   revertDataInReads
  *                a failed read carries the contract's own revert bytes.
@@ -54,6 +56,16 @@ import { studioDevnet } from "genlayer-js-next/chains";
  *                FeeValueMustBeNonZero, and a call that emits a message also
  *                needs the message allocation tree or it rolls back with
  *                Mode1MessageFeesRequireGenVMPerEmissionSupport.
+ *
+ *                Measured on Studio Next on 2026-09-14: the deposit is never
+ *                debited, so a played match costs the sender nothing. An
+ *                address still cannot play on zero. An injected wallet (Rabby,
+ *                MetaMask) reads eth_getBalance before it signs, sees zero,
+ *                and refuses a write whose value is that deposit, so the call
+ *                never reaches the node that would have ignored the value.
+ *                Funding the address from the Studio wallet panel raises the
+ *                balance eth_getBalance reports and the wallet signs. That is
+ *                why this network carries a faucet link too.
  *
  * Adding a third network means adding a row here. It should not mean touching
  * a component.
@@ -94,7 +106,11 @@ export type NetworkDef = {
    */
   explorerTx: string | null;
   explorerAddress: string | null;
-  faucet: { href: string | null; note: string };
+  /**
+   * Where GEN comes from on this network. Never null: both chains need a
+   * funded address before an injected wallet will sign anything at all.
+   */
+  faucet: { href: string; note: string };
   capabilities: Capabilities;
   /** One line under the network control, so the choice is never unexplained. */
   blurb: string;
@@ -141,12 +157,14 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
     explorerTx: STUDIO_NEXT_EXPLORER,
     explorerAddress: STUDIO_NEXT_EXPLORER,
     faucet: {
-      href: null,
-      // No link on purpose: the studio-dev faucet RPC accepts a request and
-      // credits nothing, and the simulator does not debit a sender for fees
-      // anyway, so pointing anyone at a faucet would be sending them to fix a
-      // problem they do not have.
-      note: "GEN is not debited on this network, so no faucet is needed.",
+      // The faucet is inside the Studio app rather than on a page of its own:
+      // wallet panel, top right, "Fund Account", which is sim_fundAccount over
+      // the RPC and funds whatever address is connected. The link can only
+      // open the app, so the note has to say where to look once it does.
+      href: "https://studio-next.genlayer.com",
+      note:
+        "Studio Next does not debit GEN, but your wallet needs a balance to sign; " +
+        "fund your address from the Studio wallet panel.",
     },
     capabilities: {
       hasTxLog: false,

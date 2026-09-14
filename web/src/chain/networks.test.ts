@@ -112,9 +112,24 @@ describe("network registry", () => {
     expect(isNetworkId("constructor")).toBe(false);
   });
 
-  it("offers a faucet link only where funding is actually needed", () => {
+  /**
+   * Both networks need a funded address, for different reasons.
+   *
+   * Studio Next does not debit GEN, which used to be the argument for offering
+   * no faucet at all. It is the wrong argument: an injected wallet checks
+   * eth_getBalance before it signs and refuses a write whose value is the fee
+   * deposit while that balance reads zero, so an address with no GEN cannot
+   * play there either. Its funding lives in the Studio app, not on a faucet
+   * page, so the note has to point at the panel inside it.
+   */
+  it("offers a faucet link on every network", () => {
     expect(NETWORKS.bradbury.faucet.href).toBe("https://testnet-faucet.genlayer.foundation");
-    expect(NETWORKS["studio-next"].faucet.href).toBeNull();
-    expect(NETWORKS["studio-next"].faucet.note).toMatch(/not debited/);
+    expect(NETWORKS["studio-next"].faucet.href).toBe("https://studio-next.genlayer.com");
+    expect(NETWORKS["studio-next"].faucet.note).toMatch(/needs a balance to sign/);
+    expect(NETWORKS["studio-next"].faucet.note).toMatch(/Studio wallet panel/);
+    for (const net of Object.values(NETWORKS)) {
+      expect(net.faucet.href).toMatch(/^https:\/\//);
+      expect(net.faucet.note.length).toBeGreaterThan(0);
+    }
   });
 });
