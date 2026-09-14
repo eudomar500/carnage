@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const TX1 = "0x1e4e5dbc1c632892e3ee174fc695bd30547f00e2d11dae51465b0084eaf448eb";
 const TX2 = "0xfe6cc1fb26c9f37152e569e1018b37a9a3838bdaa3112c07ee44ee30e3da22c8";
 
-const chain: Record<string, { statusName: string; resultName: string }> = {
+type RawTx = { statusName: string; resultName?: string; result_name?: string };
+
+const chain: Record<string, RawTx> = {
   [TX1]: { statusName: "FINALIZED", resultName: "TIMEOUT" },
   [TX2]: { statusName: "ACCEPTED", resultName: "AGREE" },
 };
@@ -125,5 +127,60 @@ describe("read failures are not evidence", () => {
   it("returns null for a transaction with no status", async () => {
     chain["0xempty"] = { statusName: "", resultName: "" };
     expect(await readTxVerdict("0xempty")).toBeNull();
+  });
+});
+
+/**
+ * The snake_case result field.
+ *
+ * Studio Next returns the consensus result as `result_name` and leaves
+ * `resultName` undefined. Reading only the camelCase spelling made every
+ * finalized transaction there look discarded, which would reopen a step whose
+ * write had already committed. Both spellings are pinned here because the two
+ * networks disagree and neither is going to change.
+ */
+/** Registers one synthetic transaction and returns its hash. */
+let stubSeq = 0;
+function stubTransaction(tx: RawTx): string {
+  const hash = `0xstub${stubSeq++}`;
+  chain[hash] = tx;
+  return hash;
+}
+
+describe("result field spelling", () => {
+  it("reads the camelCase result Bradbury returns", async () => {
+    const hash = stubTransaction({ statusName: "FINALIZED", resultName: "AGREE" });
+    const v = await readTxVerdict(hash);
+    expect(v).toEqual({
+      terminal: true,
+      discarded: false,
+      statusName: "FINALIZED",
+      resultName: "AGREE",
+    });
+  });
+
+  it("reads the snake_case result Studio Next returns", async () => {
+    const hash = stubTransaction({ statusName: "FINALIZED", result_name: "MAJORITY_AGREE" });
+    const v = await readTxVerdict(hash);
+    expect(v).toEqual({
+      terminal: true,
+      discarded: false,
+      statusName: "FINALIZED",
+      resultName: "MAJORITY_AGREE",
+    });
+  });
+
+  it("still reports a genuinely discarded round as discarded", async () => {
+    const hash = stubTransaction({ statusName: "FINALIZED", result_name: "TIMEOUT" });
+    expect((await readTxVerdict(hash))?.discarded).toBe(true);
+  });
+
+  it("prefers camelCase when a network somehow returns both", async () => {
+    const hash = stubTransaction({
+      statusName: "FINALIZED",
+      resultName: "AGREE",
+      result_name: "TIMEOUT",
+    });
+    expect((await readTxVerdict(hash))?.resultName).toBe("AGREE");
   });
 });

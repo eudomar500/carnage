@@ -1,6 +1,7 @@
 import { abi } from "genlayer-js";
 import { fromRlp, hexToBytes, parseAbiItem, type AbiEvent } from "viem";
-import { CARNAGE_ADDRESS, CHAIN, readClient } from "./client";
+import { activeNetwork, CARNAGE_ADDRESS, CHAIN, readClient } from "./client";
+import { addressUrl, txUrl } from "./networks";
 import { isRateLimited } from "./errors";
 import {
   historyFor,
@@ -165,11 +166,23 @@ export function newTransactionEvent(): AbiEvent | null {
   ) as AbiEvent;
 }
 
-/** Full URL for a transaction on the chain's own explorer. */
+/**
+ * Full URL for a transaction on the active network's explorer.
+ *
+ * The base comes from the network registry rather than the chain definition.
+ * Bradbury's definition carries one and the registry repeats it; Studio Next's
+ * definition carries none at all, so reading blockExplorers there returns
+ * undefined and every proof link on that network would silently disappear.
+ * Returns null only when a network genuinely publishes no explorer, which
+ * every caller already handles by printing the hash without a link.
+ */
 export function explorerTxUrl(txId: string): string | null {
-  const base = CHAIN.blockExplorers?.default?.url;
-  if (!base) return null;
-  return `${base.replace(/\/+$/, "")}/tx/${txId}`;
+  return txUrl(activeNetwork(), txId);
+}
+
+/** Full URL for an address on the active network's explorer. */
+export function explorerAddressUrl(address: string): string | null {
+  return addressUrl(activeNetwork(), address);
 }
 
 /**

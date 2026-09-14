@@ -3,6 +3,7 @@ import type { CalldataEncodable } from "genlayer-js/types";
 import type { Stage } from "./errors";
 import { concat, hexToBytes, keccak256, numberToBytes } from "viem";
 import { CARNAGE_ADDRESS, simulationClient, toCalldataAddress, writeClient } from "./client";
+import { quoteFees, withFees } from "./fees";
 import { getMatch } from "./contract";
 import type { Role } from "./roles";
 import { decodeGenvmError, tagStage } from "./errors";
@@ -104,14 +105,29 @@ export async function send(
   hooks?: SendHooks,
 ): Promise<SendResult> {
   const client = writeClient(account);
+
+  // Quoted before the wallet opens, and tagged as a submit failure: nothing
+  // has reached the network at this point, so the step stays safe to re-enable.
+  // On a network without fees this is a no-op and `fees` stays undefined.
   let hash: Awaited<ReturnType<typeof client.writeContract>>;
   try {
-    hash = await client.writeContract({
+    const fees = await quoteFees(client, {
       address: CARNAGE_ADDRESS,
       functionName: spec.functionName,
       args: spec.args,
       value: spec.value ?? 0n,
     });
+    hash = await client.writeContract(
+      withFees(
+        {
+          address: CARNAGE_ADDRESS,
+          functionName: spec.functionName,
+          args: spec.args,
+          value: spec.value ?? 0n,
+        },
+        fees,
+      ),
+    );
   } catch (err) {
     throw rethrow(err, "submit");
   }

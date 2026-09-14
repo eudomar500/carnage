@@ -57,13 +57,30 @@ const APPLIED = new Set(["AGREE", "MAJORITY_AGREE"]);
  */
 const CANCELED = "CANCELED";
 
+/**
+ * The consensus result, under either spelling.
+ *
+ * Bradbury returns it as `resultName` and leaves `result_name` unset; Studio
+ * Next does the reverse, returning `result_name: "MAJORITY_AGREE"` with
+ * `resultName` undefined. Reading only the camelCase field, which is what this
+ * did while there was one network, silently produced an empty string on Studio
+ * Next. An empty string is in neither APPLIED nor TERMINAL's exception, so
+ * every finalized transaction there came back `discarded: true` -- the app
+ * would have told the user consensus threw away a write that had in fact
+ * committed, and reopened a step that was already done. Verified against
+ * adjudicate 0x7cf79dc1 on Studio Next and 0xce21d698 on Bradbury.
+ */
+function resultNameOf(tx: any): string {
+  return String(tx?.resultName ?? tx?.result_name ?? "");
+}
+
 /** Never throws: a read failure is not evidence about the transaction. */
 export async function readTxVerdict(hash: string): Promise<TxVerdict | null> {
   try {
     const tx = (await (readClient() as any).getTransaction({ hash })) as any;
     const statusName = String(tx?.statusName ?? "");
     if (!statusName) return null;
-    const resultName = String(tx?.resultName ?? "");
+    const resultName = resultNameOf(tx);
     const terminal = TERMINAL.has(statusName);
     const discarded =
       terminal && (statusName === CANCELED || !APPLIED.has(resultName));

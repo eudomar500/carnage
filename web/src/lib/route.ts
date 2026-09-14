@@ -10,6 +10,8 @@
  * rewrite, so /app would 404 on a direct load or a refresh. ?app=1 works
  * anywhere the index does.
  */
+import { DEFAULT_NETWORK_ID, NET_PARAM, networkFromSearch, type NetworkId } from "../chain/networks";
+
 export type Route =
   | { view: "landing" }
   | { view: "post"; slug: string }
@@ -42,11 +44,28 @@ export function routeFromUrl(): Route {
 }
 
 /**
+ * Keeps ?net= only while it is saying something.
+ *
+ * It is preserved like any other unrelated parameter so a link copied out of
+ * a Studio Next session still opens on Studio Next. It is dropped when it
+ * names the default, because bradbury is what a bare URL already means and
+ * carrying it on every href would put a redundant parameter on every link in
+ * the app. An unrecognised value is dropped for the same reason the resolver
+ * ignores it: it selects nothing, so it should not travel.
+ */
+function normaliseNetParam(params: URLSearchParams): void {
+  if (!params.has(NET_PARAM)) return;
+  const named = networkFromSearch(params.toString());
+  if (named === null || named === DEFAULT_NETWORK_ID) params.delete(NET_PARAM);
+}
+
+/**
  * The URL for a route, as a real href.
  *
  * Every navigation control carries one so links stay copyable and open in a
  * new tab correctly; the click handler only takes over the in-page case.
- * Unrelated parameters (?preview= in a dev build) are preserved.
+ * Unrelated parameters (?preview= in a dev build, ?net= on a non-default
+ * network) are preserved.
  */
 export function hrefFor(route: Route, hash?: string): string {
   const url = new URL(location.href);
@@ -55,6 +74,7 @@ export function hrefFor(route: Route, hash?: string): string {
   url.searchParams.delete("app");
   url.searchParams.delete("post");
   url.searchParams.delete("lab");
+  normaliseNetParam(url.searchParams);
 
   if (route.view === "post") {
     url.searchParams.set("post", route.slug);
@@ -66,4 +86,32 @@ export function hrefFor(route: Route, hash?: string): string {
   }
 
   return `${url.pathname}${url.search}${hash ? `#${hash}` : ""}`;
+}
+
+/**
+ * Where to land after switching network.
+ *
+ * The same view on the other chain, with two deliberate changes.
+ *
+ * The match id goes. Ids are per contract: match 3 on Bradbury and match 3 on
+ * Studio Next are unrelated matches, and carrying the number across would open
+ * whatever happens to hold that id on the other deployment, or a "no such
+ * match" for a match the reader was just looking at. The open-by-id form is
+ * the honest landing place.
+ *
+ * The network is pinned into the URL rather than left to storage. The load
+ * that follows resolves ?net= ahead of the stored choice, so a URL that still
+ * carried the old ?net= would quietly undo the switch. Setting it keeps the
+ * address bar and the active network the same statement, and it is removed
+ * outright for the default, where a bare URL already says the same thing.
+ */
+export function switchHref(id: NetworkId): string {
+  const current = routeFromUrl();
+  const target: Route = current.view === "app" ? { view: "app", matchId: null } : current;
+
+  const url = new URL(hrefFor(target), location.href);
+  if (id === DEFAULT_NETWORK_ID) url.searchParams.delete(NET_PARAM);
+  else url.searchParams.set(NET_PARAM, id);
+
+  return `${url.pathname}${url.search}`;
 }

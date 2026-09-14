@@ -1,5 +1,6 @@
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
 import { CARNAGE_ADDRESS, readClient, writeClient } from "./client";
+import { quoteFees, withFees } from "./fees";
 import { decodeGenvmError, tagStage } from "./errors";
 
 /** The five-label rubric the jury returns. */
@@ -48,6 +49,16 @@ export type MatchState = {
   holder_claimable: bigint;
   buyer_claimable: bigint;
   sink_claimable: bigint;
+
+  /**
+   * Whether this deployment will actually pay a claim.
+   *
+   * Only the v0.6 fork returns it; Bradbury's contract predates the field, so
+   * it is optional and absent there. Absent means enabled, which is what
+   * Bradbury has always done. Read through withdrawalsEnabled() rather than
+   * directly, so the fallback lives in one place.
+   */
+  withdrawals_enabled?: boolean;
 
   /** Protocol sink, and the address mid-handover in the two-step transfer. */
   sink_address: string;
@@ -191,11 +202,39 @@ export function isResolved(m: MatchState): boolean {
   );
 }
 
+/**
+ * Whether this deployment pays claims at all.
+ *
+ * The contract is the authority, not the network registry: the flag is fixed
+ * into the deployment at construction, and a deployment could in principle be
+ * put on a network whose capability flag says otherwise. A contract that does
+ * not carry the field is a pre-fork contract, which always paid.
+ */
+export function withdrawalsEnabled(m: MatchState): boolean {
+  return m.withdrawals_enabled !== false;
+}
+
 export type ClaimGate =
   | { state: "not-settled"; reason: string }
   | { state: "nothing-to-claim"; reason: string }
   | { state: "not-a-party"; reason: string }
+  /**
+   * Credited, and unclaimable on this deployment. Carries the amount because
+   * the balance is still real and still owed; what is missing is any way to
+   * move it. Kept separate from "ready" so no caller can offer a button by
+   * accident: every claim surface has to name this case to show anything.
+   */
+  | { state: "withdrawals-disabled"; amount: bigint; reason: string }
   | { state: "ready"; amount: bigint };
+
+/**
+ * The sentence shown wherever a credited balance cannot be withdrawn.
+ *
+ * One constant, because it appears on both claim surfaces and the two drifting
+ * apart would read as two different facts about the same deployment.
+ */
+export const WITHDRAWALS_DISABLED_NOTE =
+  "Withdrawals are disabled on this deployment: the network does not execute outbound transfers. Your balance is recorded on-chain.";
 
 /**
  * Gates the claim button on finality, established structurally and not by a
@@ -235,6 +274,13 @@ export function claimGate(m: MatchState, wallet: string | null): ClaimGate {
   const amount = isHolder ? m.holder_claimable : m.buyer_claimable;
   if (amount === 0n) return { state: "nothing-to-claim", reason: "no balance left to claim" };
 
+  // Checked after the balance, so a party with nothing owed still reads
+  // "nothing to claim" rather than being told about a restriction that would
+  // not have affected them.
+  if (!withdrawalsEnabled(m)) {
+    return { state: "withdrawals-disabled", amount, reason: WITHDRAWALS_DISABLED_NOTE };
+  }
+
   return { state: "ready", amount };
 }
 
@@ -256,6 +302,13 @@ export function sinkClaimGate(m: MatchState, wallet: string | null): ClaimGate {
   }
   if (m.sink_claimable === 0n) {
     return { state: "nothing-to-claim", reason: "the sink has no balance in this match" };
+  }
+  if (!withdrawalsEnabled(m)) {
+    return {
+      state: "withdrawals-disabled",
+      amount: m.sink_claimable,
+      reason: WITHDRAWALS_DISABLED_NOTE,
+    };
   }
   return { state: "ready", amount: m.sink_claimable };
 }
@@ -283,12 +336,23 @@ export async function sendClaim(
   const client = writeClient(wallet);
   let hash: Awaited<ReturnType<typeof client.writeContract>>;
   try {
-    hash = await client.writeContract({
+    const fees = await quoteFees(client, {
       address: CARNAGE_ADDRESS,
       functionName: "claim",
       args: [Number(matchId)],
       value: 0n,
     });
+    hash = await client.writeContract(
+      withFees(
+        {
+          address: CARNAGE_ADDRESS,
+          functionName: "claim",
+          args: [Number(matchId)],
+          value: 0n,
+        },
+        fees,
+      ),
+    );
   } catch (err) {
     throw tagStage(err, "submit");
   }
