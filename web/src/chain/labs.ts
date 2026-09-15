@@ -399,6 +399,92 @@ export function convergenceSummary(all: MatchConvergence[]): ConvergenceSummary 
   };
 }
 
+/* ---------- how narrow the corpus is ------------------------------------- */
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** Small counts read as words in prose; anything larger stays a numeral. */
+const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const word = (n: number) => (n < WORDS.length ? WORDS[n] : String(n));
+
+const insideItsBand = (m: MatchState) =>
+  m.holder_revealed_state >= m.price_floor &&
+  m.holder_revealed_state <= m.price_ceil &&
+  m.buyer_revealed_state >= m.price_floor &&
+  m.buyer_revealed_state <= m.price_ceil;
+
+/**
+ * Everything the LIMITS opener says about the corpus, counted off the chain.
+ *
+ * The opener used to be typed out: "played from two wallets, on one price
+ * band, one stake and one deal price". That was true of Bradbury and of
+ * nothing else. The studio-next contract holds two matches played from four
+ * addresses at two different deal prices, and the sentence asserted the
+ * opposite of the state it was printed next to.
+ *
+ * `insidePairs` is the count this file used to be missing. `insideBand` says
+ * how many matches revealed constraints inside their band; it does not say
+ * those constraints were the same pair, which is what the old wording claimed
+ * for every one of them.
+ */
+export type CorpusShape = {
+  /** Adjudicated matches. The unadjudicated ones carry no figures. */
+  matches: number;
+  /** Distinct seat addresses across the corpus, holders and buyers together. */
+  wallets: number;
+  /** Distinct price bands. */
+  bands: number;
+  /** Distinct stake amounts. */
+  stakes: number;
+  /** Distinct locked deal prices. A match with no locked price is not counted. */
+  dealPrices: number;
+  /** Matches whose two revealed constraints both sit inside the band. */
+  insideBand: number;
+  /** Distinct pairs of revealed constraints among those. */
+  insidePairs: number;
+  /** Match ids, as strings, that revealed a constraint outside the band. */
+  outsideBand: string[];
+};
+
+export function corpusShape(all: MatchState[]): CorpusShape {
+  const matches = all.filter((m) => m.adjudicated);
+  const inside = matches.filter(insideItsBand);
+
+  return {
+    matches: matches.length,
+    wallets: new Set(
+      matches.flatMap((m) => [m.holder.toLowerCase(), m.buyer.toLowerCase()]),
+    ).size,
+    bands: new Set(matches.map((m) => `${m.price_floor}-${m.price_ceil}`)).size,
+    stakes: new Set(matches.map((m) => String(m.stake_amount))).size,
+    dealPrices: new Set(
+      matches.filter((m) => m.price_locked).map((m) => String(m.deal_price)),
+    ).size,
+    insideBand: inside.length,
+    insidePairs: new Set(
+      inside.map((m) => `${m.holder_revealed_state}/${m.buyer_revealed_state}`),
+    ).size,
+    outsideBand: matches.filter((m) => !insideItsBand(m)).map((m) => String(m.match_id)),
+  };
+}
+
+/** The first half of the LIMITS opener: how many, from whom, under what. */
+export function corpusNote(s: CorpusShape): string {
+  if (s.matches === 0) return "No match has been adjudicated yet.";
+
+  const prices =
+    s.dealPrices === 0
+      ? "no locked deal price"
+      : `${word(s.dealPrices)} deal ${plural(s.dealPrices, "price", "prices")}`;
+
+  return (
+    `${s.matches} ${plural(s.matches, "match", "matches")}, played from ` +
+    `${word(s.wallets)} ${plural(s.wallets, "wallet", "wallets")}, on ` +
+    `${word(s.bands)} price ${plural(s.bands, "band", "bands")}, ` +
+    `${word(s.stakes)} ${plural(s.stakes, "stake", "stakes")} and ${prices}.`
+  );
+}
+
 /**
  * The LIMITS sentence about how narrow the corpus is.
  *
@@ -414,32 +500,32 @@ export function convergenceSummary(all: MatchConvergence[]): ConvergenceSummary 
  * match also cannot "share" a pair of constraints with anything, so the
  * wording changes rather than just its number.
  *
- * `outsideBand` is match ids as strings, in the order the page lists them.
+ * The same sentence then kept "share one pair" for a corpus that shares
+ * nothing: two matches, two different pairs, both inside the band. Sharing is
+ * now read off `insidePairs` rather than assumed from the count.
  */
-export function bandNote(
-  adjudicated: number,
-  insideBand: number,
-  outsideBand: string[],
-): string {
+export function bandNote(s: CorpusShape): string {
   const RATE = "That narrowness is what stops any figure here from being a rate.";
 
-  if (adjudicated === 0) {
+  if (s.matches === 0) {
     return "No match has been adjudicated yet, so there is nothing here to read as a rate.";
   }
 
   const inside =
-    insideBand === 0
+    s.insideBand === 0
       ? null
-      : insideBand === 1
+      : s.insideBand === 1
         ? "one revealed a pair of constraints inside the band"
-        : `${insideBand} of them share one pair of revealed constraints`;
+        : s.insidePairs === 1
+          ? `${s.insideBand} of them share one pair of revealed constraints`
+          : `${s.insideBand} of them revealed ${s.insidePairs} different pairs of constraints inside the band`;
 
   const outside =
-    outsideBand.length === 0
+    s.outsideBand.length === 0
       ? null
-      : outsideBand.length === 1
-        ? `match ${outsideBand[0]} revealed a pair outside it`
-        : `matches ${outsideBand.join(", ")} revealed a pair outside it`;
+      : s.outsideBand.length === 1
+        ? `match ${s.outsideBand[0]} revealed a pair outside it`
+        : `matches ${s.outsideBand.join(", ")} revealed a pair outside it`;
 
   const clauses = [inside, outside].filter(Boolean).join("; ");
   if (!clauses) return RATE;

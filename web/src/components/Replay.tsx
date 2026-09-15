@@ -6,6 +6,7 @@ import { explorerTxUrl, requiredMethods, type LinkedMethod } from "../chain/txlo
 import { useMatchTransactions, type TxLookup } from "../hooks/useMatchTransactions";
 import { useNetwork } from "../chain/network-store";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
+import { settlementCaption } from "../lib/settlement-copy";
 
 /**
  * REPLAY: the match record, reconstructed from get_match and nothing else.
@@ -75,7 +76,7 @@ function Stat({ k, v }: { k: string; v: ReactNode }) {
   );
 }
 
-function buildFrames(m: MatchState): Frame[] {
+function buildFrames(m: MatchState, withdrawals: boolean): Frame[] {
   const frames: Frame[] = [];
   const stake = m.stake_amount;
 
@@ -264,8 +265,7 @@ function buildFrames(m: MatchState): Frame[] {
     frames.push({
       key: "settlement",
       title: "SETTLEMENT",
-      caption:
-        "Awards are recomputed from the recorded outcome using the contract's own rule, so they stay correct after each side withdraws. The unclaimed figures are live and fall to zero as claim() is called.",
+      caption: settlementCaption(withdrawals),
       // settle is where the verdict becomes money. Claims are the withdrawals
       // that followed, and there may be nought, one or two of them.
       // A settled match got there through the scheduled self-call or through
@@ -452,7 +452,8 @@ function ProofLinks({ methods, lookup }: { methods: LinkedMethod[]; lookup: TxLo
 }
 
 export default function Replay({ match }: { match: MatchState | null }) {
-  const frames = match ? buildFrames(match) : [];
+  const { network, capabilities } = useNetwork();
+  const frames = match ? buildFrames(match, capabilities.withdrawals) : [];
   const [cursor, setCursor] = useState(0);
 
   // A match that advances while the page is open grows frames, and switching
@@ -477,13 +478,14 @@ export default function Replay({ match }: { match: MatchState | null }) {
     }) : []),
     [match, settled, noReveal, inconclusive, refunded],
   );
-  // The frames themselves are built from get_match and are identical on every
-  // network. Only the verification strip under them needs a transaction log,
+  // The frames themselves are built from get_match, and every figure in them
+  // reads the same on every network; only the settlement caption differs,
+  // because the unclaimed column it describes cannot drain where withdrawals
+  // do not execute. The verification strip under them needs a transaction log,
   // so on a network without one the scan is never enabled: the lookup stays
   // idle, ProofLinks renders nothing, and no request is made. The committed
   // index and the tail scan are not consulted or disabled from here; they
   // simply are not reached.
-  const { network, capabilities } = useNetwork();
   const lookup = useMatchTransactions(
     match ? match.match_id : null,
     required,

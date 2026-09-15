@@ -13,6 +13,8 @@ import {
   bandNote,
   claimRows,
   convergenceSummary,
+  corpusNote,
+  corpusShape,
   gradingMatrix,
   injectionStats,
   labelDistribution,
@@ -121,37 +123,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
 
   const adjudicated = matches.filter((m) => m.adjudicated).length;
 
-  // The corpus used to share one pair of revealed constraints, and the LIMITS
-  // note said so. Match 9 revealed a pair outside the band, so that sentence
-  // is now only true of part of the record. Both halves are counted here
-  // rather than written down, so the note follows the chain instead of a
-  // memory of it.
-  const insideBand = useMemo(
-    () =>
-      matches.filter(
-        (m) =>
-          m.adjudicated &&
-          m.holder_revealed_state >= m.price_floor &&
-          m.holder_revealed_state <= m.price_ceil &&
-          m.buyer_revealed_state >= m.price_floor &&
-          m.buyer_revealed_state <= m.price_ceil,
-      ).length,
-    [matches],
-  );
-  const outsideBand = useMemo(
-    () =>
-      matches
-        .filter(
-          (m) =>
-            m.adjudicated &&
-            (m.holder_revealed_state < m.price_floor ||
-              m.holder_revealed_state > m.price_ceil ||
-              m.buyer_revealed_state < m.price_floor ||
-              m.buyer_revealed_state > m.price_ceil),
-        )
-        .map((m) => String(m.match_id)),
-    [matches],
-  );
+  // Everything the LIMITS opener says about the corpus: how many wallets
+  // played it, how many bands, stakes and deal prices it covers, and whether
+  // the matches inside the band revealed one pair of constraints or several.
+  // All of it counted off the chain rather than written down, because the
+  // sentence that was written down described Bradbury and was printed over
+  // every other network's state.
+  const shape = useMemo(() => corpusShape(matches), [matches]);
   const ambiguous = dist.find((d) => d.label === "AMBIGUOUS")?.count ?? 0;
   const scoredRows = useMemo(() => rows.filter((r) => r.truth.verifiable), [rows]);
   const unscoredRows = useMemo(() => rows.filter((r) => !r.truth.verifiable), [rows]);
@@ -310,12 +288,19 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   scored claims agree with the evidence, from{" "}
                   <strong>{agree.distinctTexts}</strong> distinct sentences.
                 </li>
-                <li>
-                  <strong>{convSummary.attempts}</strong> adjudicate transactions,{" "}
-                  <strong>{convSummary.withVerdict}</strong>{" "}
-                  {plural(convSummary.withVerdict, "verdict", "verdicts")} written,{" "}
-                  <strong>{convSummary.discarded}</strong> discarded.
-                </li>
+                {/* Attempts are reconstructed from the consensus contract's
+                    transaction log. Without one there is nothing to count, and
+                    three zeros here would read as a measurement of a jury that
+                    never rotated rather than as a log this network does not
+                    keep. The section itself says so; this line just goes. */}
+                {capabilities.hasTxLog ? (
+                  <li>
+                    <strong>{convSummary.attempts}</strong> adjudicate transactions,{" "}
+                    <strong>{convSummary.withVerdict}</strong>{" "}
+                    {plural(convSummary.withVerdict, "verdict", "verdicts")} written,{" "}
+                    <strong>{convSummary.discarded}</strong> discarded.
+                  </li>
+                ) : null}
                 {corpusDate ? (
                   <li>
                     Last match settled {corpusDate.day ?? "on an unread block"}, block{" "}
@@ -514,15 +499,37 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 </strong>{" "}
                 scored claims were labelled the way the evidence says.
               </p>
+              {/* The caveat is that trials and sentences are not the same
+                  number. Where they are the same, the contrast it draws does
+                  not exist: "closer to 4 trials than 4" states nothing, and
+                  the claim that the second figure is smaller is false. The
+                  equal case gets the sentence that is true of it. */}
               <p className="lab-caveat">
-                The second number is the one that matters, and it is smaller
-                than it looks. Those {agree.verifiable} claims are only{" "}
-                <strong>{agree.distinctTexts} different sentences</strong>, some
-                of them played more than once, so this is closer to{" "}
-                {agree.distinctTexts} trials than {agree.verifiable}. The other{" "}
-                {agree.interpretive} claims have no checkable answer and are left
-                out, each with its reason printed against it at the bottom of the
-                page.
+                {agree.distinctTexts === agree.verifiable ? (
+                  <>
+                    No sentence here was played twice: those {agree.verifiable}{" "}
+                    claims are{" "}
+                    <strong>{agree.distinctTexts} different sentences</strong>,
+                    so the figure rests on {agree.verifiable} trials and not
+                    fewer.
+                  </>
+                ) : (
+                  <>
+                    The second number is the one that matters, and it is smaller
+                    than it looks. Those {agree.verifiable} claims are only{" "}
+                    <strong>{agree.distinctTexts} different sentences</strong>,
+                    some of them played more than once, so this is closer to{" "}
+                    {agree.distinctTexts} trials than {agree.verifiable}.
+                  </>
+                )}
+                {agree.interpretive > 0 ? (
+                  <>
+                    {" "}
+                    The other {agree.interpretive} claims have no checkable
+                    answer and are left out, each with its reason printed against
+                    it at the bottom of the page.
+                  </>
+                ) : null}
               </p>
             </section>
 
@@ -741,24 +748,42 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             <section className="lab-section" id="claims">
               <Tag kind="live" />
               <h2 className="lab-h2">EVERY CLAIM ON THE CONTRACT</h2>
+              {/* The promise of a hash per row is the transaction log's, and
+                  a network without one keeps none of it. The rest of the
+                  paragraph is true everywhere and stays. */}
               <p className="lab-body">
-                All {rows.length} of them, scored and unscored, each with the
-                transaction that wrote its verdict. A scored claim shows what the
-                evidence says and whether the jury agreed. An unscored one shows
-                why this page refused to score it, so the claims kept out can be
-                checked against the claims kept in. Follow any hash to the
-                explorer and you are looking at the same record this page is
-                reading.
+                All {rows.length} of them, scored and unscored
+                {capabilities.hasTxLog ? ", each with the transaction that wrote its verdict" : ""}
+                . A scored claim shows what the evidence says and whether the
+                jury agreed. An unscored one shows why this page refused to score
+                it, so the claims kept out can be checked against the claims kept
+                in.
+                {capabilities.hasTxLog ? (
+                  <>
+                    {" "}
+                    Follow any hash to the explorer and you are looking at the
+                    same record this page is reading.
+                  </>
+                ) : null}
               </p>
               <p className="lab-body">
                 A claim is scored only when a number appears inside a phrase that
                 states that party's own limit. A number on its own is not enough.
-                In this record one claim names the right price inside a denial,
-                "I didn't drop to 650 because they pushed me", and reading that
-                as an assertion would score the jury wrong on a mistake it did
-                not make. Another claim counts other buyers in words and carries
-                no digits at all, so the reason printed against it is that there
-                is no number to check.
+                {/* The two examples are specific claims on the record network,
+                    quoted verbatim. Like the case studies, they do not travel:
+                    on another deployment they describe claims that are not
+                    there, next to a NOT SCORED table that may hold none. */}
+                {onRecordNetwork ? (
+                  <>
+                    {" "}
+                    In this record one claim names the right price inside a
+                    denial, "I didn't drop to 650 because they pushed me", and
+                    reading that as an assertion would score the jury wrong on a
+                    mistake it did not make. Another claim counts other buyers in
+                    words and carries no digits at all, so the reason printed
+                    against it is that there is no number to check.
+                  </>
+                ) : null}
               </p>
               <h3 className="lab-h3">SCORED ({scoredRows.length})</h3>
               <ClaimTable rows={scoredRows} lookup={lookup} legend />
@@ -772,15 +797,23 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               <h2 className="lab-h2">LIMITS</h2>
               <ul className="lab-method">
                 <li>
-                  {adjudicated} {plural(adjudicated, "match", "matches")}, played
-                  from two wallets, on one price band, one stake and one deal
-                  price. {bandNote(adjudicated, insideBand, outsideBand)}
+                  {corpusNote(shape)} {bandNote(shape)}
                 </li>
                 <li>
-                  {agree.verifiable} scored claims, drawn from{" "}
-                  {agree.distinctTexts} distinct sentences. The agreement figure
-                  rests on {agree.distinctTexts} sentences, not{" "}
-                  {agree.verifiable}.
+                  {agree.distinctTexts === agree.verifiable ? (
+                    <>
+                      {agree.verifiable} scored claims, each a different
+                      sentence, so the agreement figure rests on{" "}
+                      {agree.verifiable} sentences and not fewer.
+                    </>
+                  ) : (
+                    <>
+                      {agree.verifiable} scored claims, drawn from{" "}
+                      {agree.distinctTexts} distinct sentences. The agreement
+                      figure rests on {agree.distinctTexts} sentences, not{" "}
+                      {agree.verifiable}.
+                    </>
+                  )}
                 </li>
                 <li>
                   {injection.flagged.length} injection-shaped{" "}

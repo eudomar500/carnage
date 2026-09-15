@@ -264,7 +264,7 @@ The deal price is agreed off-chain and never moves through the contract, so with
 
 ## What comes next
 
-Nine matches say what they say: on this record no claim that contradicted its committed number has passed the jury, one claim written to be ambiguous was called misleading, and one instruction aimed at the judge was ignored. That is a start, not a result. The instrument is built; what it needs now is volume, variety and a reason for people to keep feeding it. Each item below is a direction the current contract and app already point at.
+Eleven matches across two networks say what they say: on this record no claim that contradicted its committed number has passed the jury, one claim written to be ambiguous was called misleading, and one instruction aimed at the judge was ignored. That is a start, not a result. The instrument is built; what it needs now is volume, variety and a reason for people to keep feeding it. Each item below is a direction the current contract and app already point at.
 
 **The benchmark**
 

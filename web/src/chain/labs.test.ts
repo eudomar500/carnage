@@ -5,6 +5,9 @@ import {
   agreement,
   bandNote,
   claimRows,
+  corpusNote,
+  corpusShape,
+  type CorpusShape,
   convergenceOf,
   convergenceSummary,
   stakeSpread,
@@ -371,9 +374,124 @@ describe("convergence per match", () => {
  * a plural verb on one, a plural noun with no list, and a claim about an empty
  * set. These pin the shapes that broke it.
  */
+/* ---------- the shape of the corpus -------------------------------------- */
+
+/** A corpus shape with the fields a case cares about and sane defaults. */
+const shape = (over: Partial<CorpusShape> = {}): CorpusShape => ({
+  matches: 0,
+  wallets: 2,
+  bands: 1,
+  stakes: 1,
+  dealPrices: 1,
+  insideBand: 0,
+  insidePairs: 0,
+  outsideBand: [],
+  ...over,
+});
+
+describe("corpusShape", () => {
+  const seated = (
+    id: bigint,
+    holder: string,
+    buyer: string,
+    over: Partial<MatchState> = {},
+  ): MatchState => ({ ...base, match_id: id, holder, buyer, ...over });
+
+  const OTHER_HOLDER = "0xCCccCCccCCccCCccCCccCCccCCccCCccCCccCCcc";
+  const OTHER_BUYER = "0xDDddDDddDDddDDddDDddDDddDDddDDddDDddDDdd";
+
+  it("counts the record the LIMITS opener describes", () => {
+    const s = corpusShape([
+      seated(1n, HOLDER, BUYER),
+      seated(2n, HOLDER, BUYER, { deal_price: 780n }),
+    ]);
+    expect(s).toEqual({
+      matches: 2,
+      wallets: 2,
+      bands: 1,
+      stakes: 1,
+      dealPrices: 2,
+      insideBand: 2,
+      insidePairs: 1,
+      outsideBand: [],
+    });
+  });
+
+  it("counts every distinct seat address, not the number of seats", () => {
+    // The studio-next record: two matches, four addresses, nobody repeated.
+    const s = corpusShape([
+      seated(1n, HOLDER, BUYER),
+      seated(2n, OTHER_HOLDER, OTHER_BUYER, {
+        holder_revealed_state: 700n,
+        buyer_revealed_state: 850n,
+        deal_price: 780n,
+      }),
+    ]);
+    expect(s.wallets).toBe(4);
+    expect(s.dealPrices).toBe(2);
+    // Both pairs sit inside the band, and they are not the same pair.
+    expect(s.insideBand).toBe(2);
+    expect(s.insidePairs).toBe(2);
+  });
+
+  it("ignores a match that has not been adjudicated", () => {
+    const s = corpusShape([seated(1n, HOLDER, BUYER, { adjudicated: false })]);
+    expect(s).toEqual(shape({ matches: 0, wallets: 0, bands: 0, stakes: 0, dealPrices: 0 }));
+  });
+
+  it("separates the matches that revealed outside their band", () => {
+    const s = corpusShape([
+      seated(1n, HOLDER, BUYER),
+      seated(2n, HOLDER, BUYER, {
+        holder_revealed_state: 2400n,
+        buyer_revealed_state: 4200n,
+      }),
+    ]);
+    expect(s.insideBand).toBe(1);
+    expect(s.outsideBand).toEqual(["2"]);
+  });
+
+  it("does not count a deal price that never locked", () => {
+    const s = corpusShape([seated(1n, HOLDER, BUYER, { price_locked: false })]);
+    expect(s.dealPrices).toBe(0);
+  });
+});
+
+describe("corpusNote", () => {
+  it("reads as it always has on a record with one of everything", () => {
+    expect(corpusNote(shape({ matches: 9, wallets: 2, insideBand: 8 }))).toBe(
+      "9 matches, played from two wallets, on one price band, one stake and one deal price.",
+    );
+  });
+
+  it("says two deal prices when the record holds two", () => {
+    expect(
+      corpusNote(shape({ matches: 2, wallets: 4, dealPrices: 2, insideBand: 2, insidePairs: 2 })),
+    ).toBe(
+      "2 matches, played from four wallets, on one price band, one stake and two deal prices.",
+    );
+  });
+
+  it("pluralises bands and stakes off the count too", () => {
+    expect(corpusNote(shape({ matches: 3, wallets: 6, bands: 2, stakes: 3, dealPrices: 3 }))).toBe(
+      "3 matches, played from six wallets, on two price bands, three stakes and three deal prices.",
+    );
+  });
+
+  it("does not promise a deal price nothing locked", () => {
+    expect(corpusNote(shape({ matches: 1, wallets: 2, dealPrices: 0 }))).toBe(
+      "1 match, played from two wallets, on one price band, one stake and no locked deal price.",
+    );
+  });
+
+  it("has nothing to describe on an empty corpus", () => {
+    expect(corpusNote(shape())).toBe("No match has been adjudicated yet.");
+  });
+});
+
 describe("bandNote", () => {
   it("says nothing about constraints on an empty corpus", () => {
-    const note = bandNote(0, 0, []);
+    const note = bandNote(shape());
     expect(note).toBe(
       "No match has been adjudicated yet, so there is nothing here to read as a rate.",
     );
@@ -382,7 +500,7 @@ describe("bandNote", () => {
 
   it("handles a corpus of one inside the band", () => {
     // The studio-next case. One match cannot "share" a pair with anything.
-    const note = bandNote(1, 1, []);
+    const note = bandNote(shape({ matches: 1, insideBand: 1, insidePairs: 1 }));
     expect(note).toBe(
       "One revealed a pair of constraints inside the band. That narrowness is what stops any figure here from being a rate.",
     );
@@ -391,7 +509,7 @@ describe("bandNote", () => {
   });
 
   it("handles a corpus of one outside the band", () => {
-    const note = bandNote(1, 0, ["4"]);
+    const note = bandNote(shape({ matches: 1, outsideBand: ["4"] }));
     expect(note).toBe(
       "Match 4 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
     );
@@ -399,16 +517,36 @@ describe("bandNote", () => {
   });
 
   it("handles many, with some outside", () => {
-    expect(bandNote(9, 8, ["9"])).toBe(
+    expect(
+      bandNote(shape({ matches: 9, insideBand: 8, insidePairs: 1, outsideBand: ["9"] })),
+    ).toBe(
       "8 of them share one pair of revealed constraints; match 9 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
     );
-    expect(bandNote(9, 7, ["8", "9"])).toBe(
+    expect(
+      bandNote(shape({ matches: 9, insideBand: 7, insidePairs: 1, outsideBand: ["8", "9"] })),
+    ).toBe(
       "7 of them share one pair of revealed constraints; matches 8, 9 revealed a pair outside it. That narrowness is what stops any figure here from being a rate.",
     );
   });
 
+  it("does not claim a shared pair where there is none", () => {
+    // Two matches inside the band, two different pairs of constraints. The
+    // count alone used to be read as sharing, which stated the opposite.
+    const note = bandNote(shape({ matches: 2, insideBand: 2, insidePairs: 2 }));
+    expect(note).toBe(
+      "2 of them revealed 2 different pairs of constraints inside the band. That narrowness is what stops any figure here from being a rate.",
+    );
+    expect(note).not.toContain("share");
+  });
+
+  it("still says shared when the pairs really are one pair", () => {
+    expect(bandNote(shape({ matches: 4, insideBand: 4, insidePairs: 1 }))).toContain(
+      "4 of them share one pair of revealed constraints",
+    );
+  });
+
   it("drops the outside clause entirely when none are outside", () => {
-    const note = bandNote(9, 9, []);
+    const note = bandNote(shape({ matches: 9, insideBand: 9, insidePairs: 1 }));
     expect(note).toBe(
       "9 of them share one pair of revealed constraints. That narrowness is what stops any figure here from being a rate.",
     );
@@ -417,16 +555,17 @@ describe("bandNote", () => {
   });
 
   it("never leaves a dangling clause or a doubled separator", () => {
-    const shapes: [number, number, string[]][] = [
-      [0, 0, []],
-      [1, 1, []],
-      [1, 0, ["1"]],
-      [2, 1, ["2"]],
-      [9, 9, []],
-      [9, 0, ["1", "2"]],
+    const shapes: CorpusShape[] = [
+      shape(),
+      shape({ matches: 1, insideBand: 1, insidePairs: 1 }),
+      shape({ matches: 1, outsideBand: ["1"] }),
+      shape({ matches: 2, insideBand: 1, insidePairs: 1, outsideBand: ["2"] }),
+      shape({ matches: 9, insideBand: 9, insidePairs: 1 }),
+      shape({ matches: 9, insideBand: 2, insidePairs: 2, outsideBand: ["1", "2"] }),
+      shape({ matches: 2, insideBand: 2, insidePairs: 2 }),
     ];
-    for (const [adj, inside, outside] of shapes) {
-      const note = bandNote(adj, inside, outside);
+    for (const s of shapes) {
+      const note = bandNote(s);
       expect(note).not.toMatch(/;\s*\./);
       expect(note).not.toMatch(/\s{2,}/);
       expect(note.trim()).toBe(note);
