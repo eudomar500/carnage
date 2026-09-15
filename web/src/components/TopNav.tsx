@@ -30,6 +30,10 @@ const SECTIONS: Section[] = [
   { label: "HOW IT WORKS", hash: "how-it-works" },
   { label: "RUBRIC", hash: "rubric" },
   { label: "REPLAY", hash: "replay" },
+  // Landing-only for the same reason the benchmark is: in the app the nav
+  // already carries the network switch itself, which is the control this
+  // section exists to explain.
+  { label: "NETWORKS", hash: "networks", landingOnly: true },
   // Dropped from the app nav rather than linked back to the landing. The
   // benchmark is positioning you read once, not something you consult in the
   // middle of a match the way you consult what MISLEADING costs you, and the

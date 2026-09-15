@@ -161,7 +161,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       simulateCarriesValue: false,
       feesOnWrite: false,
     },
-    blurb: "The durable record. Every match ever played by Carnage is here.",
+    blurb: "The durable record. The transaction log, the committed index and Labs live here.",
   },
 
   "studio-next": {

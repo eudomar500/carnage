@@ -181,11 +181,32 @@ GenLayer        -> what does the natural-language claim mean relative to the com
 
 The contract is deliberately boring and good at deterministic things. GenLayer is used only for the one thing deterministic code cannot do.
 
+## Networks
+
+Carnage runs on two networks. Bradbury is the default and the durable record. Studio Next is the same mechanics on the v0.6 stack.
+
+| Network | Chain | Contract | Open | What it supports |
+|---|---|---|---|---|
+| GenLayer Bradbury testnet | 4221 | [`0xc60850c9...2d24337A`](https://explorer-bradbury.genlayer.com/address/0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A) | [carnageapp.xyz](https://carnageapp.xyz/) | The full lifecycle, the transaction log, the committed index, replay proof links, Labs convergence, withdrawals |
+| GenLayer Studio Next | 61997 | [`0xB84f059D...b72078e0`](https://explorer-studio-dev.genlayer.com/address/0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0) | [carnageapp.xyz/?net=studio-next](https://carnageapp.xyz/?net=studio-next) | The full lifecycle. No transaction log, no proof links, no convergence measurement, no withdrawals |
+
+Bradbury, chain 4221, is the default and the durable record. Nine matches are on record there. The transaction log, the committed index, the replay proof links, Labs convergence and withdrawals all work. Testnet GEN comes from the [GenLayer faucet](https://testnet-faucet.genlayer.foundation).
+
+Studio Next, chain 61997, is the same mechanics on the v0.6 stack. Its contract is deployed from `contracts/carnage_v06.py`, which is identical to `carnage.py` except for the v0.6 SDK renames and a `withdrawals_enabled` flag set to false. The app talks to it over https://studio-dev.genlayer.com/api. Two matches are on record there, the second played end to end from the browser with an injected wallet.
+
+Every write on Studio Next carries a fee deposit estimated by the SDK. The network does not debit it, but a wallet refuses to sign from an address that reads a zero balance, so fund the address first from the wallet panel inside https://studio-next.genlayer.com.
+
+Studio Next exposes no transaction log, so there are no replay proof links and no convergence measurement there. It does not execute outbound transfers, so `claim()` is disabled and settled balances stay recorded in the contract ledger. The network resets by design.
+
+Both rows were checked against the live networks on 2026-09-14.
+
 ## Status
 
 This is a first release. The instrument is complete and audited; the record it holds is small and grows only as matches are played. What comes next is at the end of this file.
 
 Built, audited and running on Bradbury.
+
+A second deployment runs the same mechanics on the v0.6 stack. [Networks](#networks) says what each one supports.
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
 - **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves.

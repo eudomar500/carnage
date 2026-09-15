@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 import TopNav, { type NavShell } from "../components/TopNav";
 import JudgeTrex from "../components/JudgeTrex";
 import HowItWorks from "../components/HowItWorks";
+import Networks from "../components/Networks";
 import Rubric from "../components/Rubric";
 import Replay from "../components/Replay";
 import Benchmark from "../components/Benchmark";
@@ -108,6 +109,7 @@ export default function LandingPage({ nav, onOpenPost }: LandingPageProps) {
       <HowItWorks match={null} />
       <Rubric match={null} />
       <Replay match={null} />
+      <Networks />
       <Benchmark onOpenLab={nav.onOpenLab} />
       <Blog onOpenPost={onOpenPost} />
 
