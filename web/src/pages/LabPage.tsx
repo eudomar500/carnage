@@ -398,10 +398,24 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   to Prompt-Injection Attacks
                 </a>{" "}
                 (arXiv:2505.13348) reports attack success rates above 30 percent
-                against current models. That figure is a published research
-                result and not a Carnage measurement. It was obtained on fixed
-                datasets, offline, where the text had no cost to write and the
-                verdict moved nothing.
+                against current models.
+              </p>
+              <p className="lab-body">
+                The planted text does not have to be written by hand.{" "}
+                <a
+                  className="lab-inline-link"
+                  href="https://arxiv.org/abs/2403.17710"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Optimization-based Prompt Injection Attack to LLM-as-a-Judge
+                </a>{" "}
+                (arXiv:2403.17710) shows that a suffix optimised against the
+                judge, rather than composed by a person, can steer that judge
+                toward a chosen answer, and it evaluates the attack on judge
+                setups offline. Neither result is a Carnage measurement. Both
+                were obtained on fixed datasets, offline, where the text cost
+                nothing to submit and the verdict moved nothing.
               </p>
             </section>
 

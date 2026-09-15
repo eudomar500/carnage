@@ -62,7 +62,7 @@ const REFERENCES: Reference[] = [
   },
   {
     n: 2,
-    title: "JudgeDeceiver: Prompt Injection Attacks to Manipulate LLM-as-a-Judge",
+    title: "Optimization-based Prompt Injection Attack to LLM-as-a-Judge",
     href: "https://arxiv.org/abs/2403.17710",
   },
 ];
