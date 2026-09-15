@@ -2,7 +2,7 @@
 
 **A negotiation game, and a benchmark for the AI jury that judges it.**
 
-Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a price off-chain, each anchors a natural-language claim on-chain, then both reveal the private constraint they committed to before speaking. A decentralized AI jury classifies each claim against that revealed evidence, and the verdict moves staked funds. The nine matches on the deployed contract were played by people. The protocol does not care whether a wallet is driven by a person or by a program, so a program can take a seat with no contract change. The jury is the only AI in the system.
+Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a price off-chain, each anchors a natural-language claim on-chain, then both reveal the private constraint they committed to before speaking. A decentralized AI jury classifies each claim against that revealed evidence, and the verdict moves staked funds. The eleven matches on the two deployed contracts were played by people. The protocol does not care whether a wallet is driven by a person or by a program, so a program can take a seat with no contract change. The jury is the only AI in the system.
 
 > The cryptography establishes what each side committed to. GenLayer establishes what their natural-language claims mean relative to that committed evidence.
 
@@ -10,13 +10,13 @@ Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a pr
 
 **Play:** https://carnageapp.xyz/ | **Carnage Labs:** https://carnageapp.xyz/?lab=1
 
-**Contract:** [`0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A`](https://explorer-bradbury.genlayer.com/address/0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A) on GenLayer Bradbury | **Audit:** 22 findings across four severities, all resolved ([docs/security-audit.md](docs/security-audit.md))
+**Contract:** [`0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A`](https://explorer-bradbury.genlayer.com/address/0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A) on GenLayer Bradbury | [`0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0`](https://explorer-studio-dev.genlayer.com/address/0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0) on GenLayer Studio Next | **Audit:** 22 findings across four severities, all resolved ([docs/security-audit.md](docs/security-audit.md))
 
 ---
 
 ## Why this matters
 
-Carnage is an adversarial benchmark for the layer the agent economy is quietly betting on: an AI jury that reads natural-language claims and returns a verdict with money attached, and that layer has a known weakness. A growing body of research on "LLM-as-a-Judge" systems, the paradigm of using a language model to evaluate text, has shown that these judges can be manipulated by the very inputs they are asked to judge, and recent work formalizing prompt-injection attacks against judge architectures reports attack success rates above 30 percent against current models ([Investigating the Vulnerability of LLM-as-a-Judge Architectures to Prompt-Injection Attacks](https://arxiv.org/abs/2505.13348) and [JudgeDeceiver: Prompt Injection Attacks to Manipulate LLM-as-a-Judge](https://arxiv.org/abs/2403.17710); both reported in published research, not Carnage measurements). The recorded matches are built to test that weakness, with claims written to mislead the jury, one written to attack it directly, and honest claims alongside as the baseline, every one on the record.
+Carnage is an adversarial benchmark for the layer the agent economy is quietly betting on: an AI jury that reads natural-language claims and returns a verdict with money attached, and that layer has a known weakness. A growing body of research on "LLM-as-a-Judge" systems, the paradigm of using a language model to evaluate text, has shown that these judges can be manipulated by the very inputs they are asked to judge, and recent work formalizing prompt-injection attacks against judge architectures reports attack success rates above 30 percent against current models ([Investigating the Vulnerability of LLM-as-a-Judge Architectures to Prompt-Injection Attacks](https://arxiv.org/abs/2505.13348) and [Optimization-based Prompt Injection Attack to LLM-as-a-Judge](https://arxiv.org/abs/2403.17710); both reported in published research, not Carnage measurements). The recorded matches are built to test that weakness, with claims written to mislead the jury, one written to attack it directly, and honest claims alongside as the baseline, every one on the record.
 
 ## Who this is for
 
@@ -150,6 +150,8 @@ Nine matches, all adjudicated and settled. Every match on the record shares one 
 
 Amounts in GEN. Match 3 is the only both-adverse settlement and the only one that credited the sink. Every match shows escrow, credited and paid totals equal.
 
+**On Studio Next.** Two matches, both adjudicated and settled, both on the same band (500 to 1000) and the same stake (0.01 GEN per side). Match 1 drew FALSE on the holder and TRUE on the buyer at a deal price of 750: the holder was credited 0, the buyer 0.02 GEN. Match 2 drew TRUE on the holder and FALSE on the buyer at a deal price of 780: the holder was credited 0.02 GEN, the buyer 0. Match 2 was played end to end from a browser wallet. The network keeps no transaction log, so no transaction hashes exist behind either match.
+
 **AMBIGUOUS has not been observed.** Four of the five labels have been returned across the eighteen claims; the fifth has not come up in these nine matches. Match 9's holder claim was written to draw it, and the jury returned MISLEADING instead, so AMBIGUOUS is still unobserved after a deliberate attempt to produce it.
 
 ## Rounds the jury threw away
@@ -166,6 +168,8 @@ Both executions ran to completion and produced labels; neither reached contract 
 `get_match` returns state, not history, so the hashes behind each step come from the consensus contract's log. Bradbury refuses any `eth_getLogs` range wider than 10000 blocks and produces a block every 0.76 s, so walking the contract's whole history costs a window per 10000 blocks and grows by about ten windows a day. Carnage is a static build with no server to keep an index warm.
 
 So the history is committed. `web/src/chain/history.json` is generated from the contract by `npm run snapshot` and shipped with the bundle; blocks after its snapshot are scanned live. Replay and Labs read both. Any reader can regenerate the file from the chain and compare.
+
+Studio Next has no log and no index, so Replay and Labs read `get_match` there and nothing else.
 
 ## The protocol sink
 
@@ -209,8 +213,8 @@ Built, audited and running on Bradbury.
 A second deployment runs the same mechanics on the v0.6 stack. [Networks](#networks) says what each one supports.
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
-- **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves.
-- **Tests.** 128 direct-mode contract tests, 50 of them pinning audit findings closed. 188 front-end tests across eight files.
+- **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves. The Studio Next fork has no audit of its own: it differs from `carnage.py` only in the v0.6 SDK renames and the withdrawals flag, and it is covered by its own direct-mode suite.
+- **Tests.** 128 direct-mode contract tests for `carnage.py`, 50 of them pinning audit findings closed, and 131 for the Studio Next fork. 310 front-end tests across 17 files.
 - **Fund safety.** No reachable state strands funds. Every failure state has a permissionless, deadline-gated recovery any caller can trigger, so a match cannot be held hostage by the side that walked away.
 - **Front end.** The lifecycle from creating a match to claiming a payout, the recovery paths, notifications for anything needing attention, a replay that reconstructs a match from contract state with links to the transactions that prove each step, and Carnage Labs.
 
@@ -223,6 +227,8 @@ Tested on Python 3.12 and Node 22.
 ```
 python3 -m venv .venv && . .venv/bin/activate             # PEP 668 distros refuse a system pip
 pip install -r requirements.txt && pytest tests/direct    # contract tests
+python3 -m venv .venv-v06 && . .venv-v06/bin/activate     # the two toolchains cannot share a venv
+pip install -r requirements-v06.txt && pytest tests/direct_v06   # the Studio Next fork
 cd web && npm install && npm run dev                      # the app
 ```
 
@@ -230,11 +236,11 @@ See [web/README.md](web/README.md) for the front-end commands.
 
 ## Playing a match
 
-**Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the nine recorded matches were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
+**Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the eleven recorded matches across the two networks were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
 
-**Bradbury, and testnet GEN.** The app is pinned to GenLayer Bradbury and every stake, credit and payout is in its native GEN. Fund the seats with testnet GEN from the GenLayer faucet. The stake is set per match by whoever creates it, any amount above zero and below the protocol maximum; the nine matches on record were created with 0.01 GEN a side.
+**Two networks, and testnet GEN.** The app opens on GenLayer Bradbury, and the top bar switches it to Studio Next. Every stake, credit and payout is in the native GEN of the network in use. Fund the seats with Bradbury GEN from the GenLayer faucet, and with Studio Next GEN from the wallet panel inside https://studio-next.genlayer.com. The stake is set per match by whoever creates it, any amount above zero and below the protocol maximum; every match on record was created with 0.01 GEN a side.
 
-**Wallet connection is plain EIP-1193.** Connecting is `eth_requestAccounts` followed by `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` when the wallet does not know Bradbury yet. Any ordinary injected EVM wallet that can switch chains works; the GenLayer snap and MetaMask Flask are not used and not needed. Salts are never stored anywhere: each is derived from a deterministic wallet signature over a fixed, match-bound message, so the only thing to carry from commit to reveal is the number that was committed.
+**Wallet connection is plain EIP-1193.** Connecting is `eth_requestAccounts` followed by `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` when the wallet does not know the active network yet. Any ordinary injected EVM wallet that can switch chains works; the GenLayer snap and MetaMask Flask are not used and not needed. Salts are never stored anywhere: each is derived from a deterministic wallet signature over a fixed, match-bound message, so the only thing to carry from commit to reveal is the number that was committed.
 
 **Expect the jury to take minutes, not seconds.** Summoning it runs a live validator network, each validator classifying both claims itself, and the wait for the round to be accepted alone can run to six minutes. A round can also end without writing anything, either because the leader timed out or because the validators did not converge; nothing leaves escrow when that happens and the step stays open to be summoned again. Two of the eleven adjudicate transactions on the record ended that way. Settlement is scheduled for the moment an accepted adjudication finalizes, with `force_settle` as the manual fallback about two hours later.
 
@@ -254,7 +260,7 @@ Prompt injection is measured, not declared solved, and one flagged claim is an a
 
 Privacy exists only during off-chain negotiation. Claims are stored in plaintext from the moment they are anchored, and constraints are public from the reveal. Nothing on-chain is confidential.
 
-The deal price is agreed off-chain and never moves through the contract, so within Carnage the only strategy that keeps a stake is telling the truth. A lie pays only if the jury lets it through. That has not happened in nine matches, and nothing here claims it cannot: Carnage exists to find out whether it does, one match at a time, with every attempt on the record.
+The deal price is agreed off-chain and never moves through the contract, so within Carnage the only strategy that keeps a stake is telling the truth. A lie pays only if the jury lets it through. That has not happened in eleven matches across two networks, and nothing here claims it cannot: Carnage exists to find out whether it does, one match at a time, with every attempt on the record.
 
 ## What comes next
 
