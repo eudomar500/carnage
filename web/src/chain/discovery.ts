@@ -1,5 +1,6 @@
 import { CARNAGE_ADDRESS } from "./client";
 import { getMatch, isUnknownMatch, type MatchState } from "./contract";
+import { readBatchSize, takeDiscoverySlot } from "./pacing";
 import { sinkSeatOf } from "./roles";
 
 /**
@@ -28,14 +29,34 @@ import { sinkSeatOf } from "./roles";
 /** Ceiling on a single walk. Reported honestly rather than hidden. */
 export const MAX_SCAN_IDS = 200;
 
-/** Reads in flight at once. The txlog scan settled on the same number. */
+/**
+ * Reads in flight at once, where the node does not count them.
+ *
+ * The txlog scan settled on the same number. Every use below goes through
+ * concurrency(), which drops it to one on a network that meters reads: four at
+ * a time against thirty a minute is three refusals and an answer, and the
+ * refusals cost retries that leave the walk further behind than single file.
+ */
 const CONCURRENCY = 4;
+
+const concurrency = () => readBatchSize(CONCURRENCY);
 
 /** How long a wallet's match list is trusted before a full re-walk. */
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 /** Ids probed past the high-water mark on a warm refresh. */
 const LOOKAHEAD = 2;
+
+/**
+ * Reads one warm refresh costs: the wallet's known matches plus the lookahead.
+ *
+ * The bell's sweep period is derived from this, because a sweep is not one
+ * read and pacing it as though it were would spend a wallet with several
+ * matches straight through the budget.
+ */
+export function readsPerSweep(d: Discovery | null): number {
+  return (d?.ids.length ?? 0) + LOOKAHEAD;
+}
 
 export type Discovery = {
   /** Match ids this wallet has a stake in, ascending. */
@@ -109,12 +130,47 @@ export function walletIsInvolved(m: MatchState, wallet: string): boolean {
 
 type Probe = { id: number; match: MatchState | null; missing: boolean; error: unknown };
 
+/**
+ * Attempts a single id gets, and how long it waits between them.
+ *
+ * Studio Next answers thirty requests a minute and refuses the rest, and this
+ * walk shares that budget with every other read the visit has already made.
+ * Probed against the deployed contract on 2026-09-15, the refusal arrives as
+ *
+ *   name "UnknownRpcError", code -1,
+ *   details "Rate limit exceeded: 30 requests per minute"
+ *
+ * with the node's own -32029 one level down in `cause`, while a genuinely
+ * unknown id answers with name "InvalidInputRpcError", code -32000 and details
+ * "execution failed". Only the second is an answer. The first was ending the
+ * walk anyway, which is how Labs came to show the three matches it had read
+ * with "a read failed, so the match list may be incomplete" under them: the
+ * probe of id 4 spent the last request of the minute.
+ *
+ * So a fault is waited out rather than taken as the end of the record. The
+ * wait is bounded and the page already says it is reading the contract. A
+ * fault that survives every attempt still degrades, because at that point the
+ * list really is unfinished and saying otherwise would be the worse error.
+ */
+const PROBE_ATTEMPTS = 3;
+const RETRY_BASE_MS = 2000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function probe(id: number): Promise<Probe> {
-  try {
-    return { id, match: await getMatch(id), missing: false, error: null };
-  } catch (err) {
-    if (isUnknownMatch(err)) return { id, match: null, missing: true, error: null };
-    return { id, match: null, missing: false, error: err };
+  let wait = RETRY_BASE_MS;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      // Every attempt queues, retries included. A retry that jumped the line
+      // would be asking the node that just refused us to answer sooner.
+      await takeDiscoverySlot();
+      return { id, match: await getMatch(id), missing: false, error: null };
+    } catch (err) {
+      if (isUnknownMatch(err)) return { id, match: null, missing: true, error: null };
+      if (attempt >= PROBE_ATTEMPTS) return { id, match: null, missing: false, error: err };
+      await sleep(wait);
+      wait *= 2;
+    }
   }
 }
 
@@ -138,7 +194,8 @@ async function walk(
 
   while (id < from + limit) {
     const batch: number[] = [];
-    for (let k = 0; k < CONCURRENCY && id + k < from + limit; k++) batch.push(id + k);
+    const width = concurrency();
+    for (let k = 0; k < width && id + k < from + limit; k++) batch.push(id + k);
     const results = await Promise.all(batch.map(probe));
 
     for (const r of results) {
@@ -192,8 +249,9 @@ export async function discoverMatches(wallet: string): Promise<DiscoveryResult> 
   // Warm: the wallet's known matches, re-read for current state.
   const known: MatchState[] = [];
   let degraded: string | null = null;
-  for (let i = 0; i < cached.ids.length; i += CONCURRENCY) {
-    const slice = cached.ids.slice(i, i + CONCURRENCY);
+  const width = concurrency();
+  for (let i = 0; i < cached.ids.length; i += width) {
+    const slice = cached.ids.slice(i, i + width);
     const results = await Promise.all(slice.map(probe));
     for (const r of results) {
       if (r.error) degraded = "a read failed, so some matches may be out of date";
@@ -243,8 +301,9 @@ export async function discoverAllMatches(
   if (fresh) {
     const known: MatchState[] = [];
     let degraded: string | null = null;
-    for (let i = 0; i < cached.ids.length; i += CONCURRENCY) {
-      const slice = cached.ids.slice(i, i + CONCURRENCY);
+    const width = concurrency();
+    for (let i = 0; i < cached.ids.length; i += width) {
+      const slice = cached.ids.slice(i, i + width);
       for (const r of await Promise.all(slice.map(probe))) {
         if (r.error) degraded = "a read failed, so some matches may be out of date";
         else if (r.match) known.push(r.match);

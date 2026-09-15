@@ -1,5 +1,6 @@
 import { isResolved } from "./contract";
 import type { MatchState } from "./contract";
+import { confirmPollMs } from "./pacing";
 import type { ActionId, Role } from "./roles";
 
 /**
@@ -69,7 +70,15 @@ const DISCARDED_NOTE =
 const mine = <K extends keyof MatchState>(role: Role, holderKey: K, buyerKey: K) =>
   (m: MatchState) => Boolean(m[role === "holder" ? holderKey : buyerKey]);
 
-/** Ordinary deterministic writes show up as soon as the write commits. */
+/**
+ * Ordinary deterministic writes show up as soon as the write commits.
+ *
+ * Both poll figures go through confirmPollMs, which returns them untouched on
+ * a node that does not count reads and stretches them to this watcher's share
+ * of the budget on one that does. On Studio Next that is one read every ten
+ * seconds for either kind. The windows are not paced: they are how long we are
+ * willing to wait for the chain, which has nothing to do with how often we ask.
+ */
 const FAST_WINDOW_MS = 90_000;
 const FAST_POLL_MS = 5_000;
 
@@ -85,7 +94,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
     actionId: id,
     role,
     windowMs: FAST_WINDOW_MS,
-    pollMs: FAST_POLL_MS,
+    pollMs: confirmPollMs(FAST_POLL_MS),
     discardedNote: DISCARDED_NOTE,
   };
 
@@ -157,7 +166,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         role,
         windowMs: JURY_WINDOW_MS,
-        pollMs: JURY_POLL_MS,
+        pollMs: confirmPollMs(JURY_POLL_MS),
         // The one action that hits this regularly. adjudicate is the only
         // call the app does not preflight, and the only one that runs a
         // nondeterministic round, which is what exposes it to a round the
@@ -184,7 +193,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         role,
         windowMs: 120_000,
-        pollMs: FAST_POLL_MS,
+        pollMs: confirmPollMs(FAST_POLL_MS),
         discardedNote: DISCARDED_NOTE,
         landed: (m) => (role === "holder" ? m.holder_claimable : m.buyer_claimable) === 0n,
         pendingNote: "confirming the claim was recorded...",
@@ -199,7 +208,7 @@ export function confirmationFor(id: ActionId, role: Role): Confirmation {
         actionId: id,
         role,
         windowMs: 120_000,
-        pollMs: FAST_POLL_MS,
+        pollMs: confirmPollMs(FAST_POLL_MS),
         discardedNote: DISCARDED_NOTE,
         landed: (m) => m.sink_claimable === 0n,
         pendingNote: "confirming the sink claim was recorded...",

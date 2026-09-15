@@ -64,7 +64,8 @@ describe("network registry", () => {
       hasTxLog: true,
       hasIndex: true,
       withdrawals: true,
-      revertDataInReads: true,
+      readRevertBytes: "return-data",
+      readsPerMinute: null,
       simulateCarriesValue: false,
       feesOnWrite: false,
     });
@@ -72,18 +73,29 @@ describe("network registry", () => {
       hasTxLog: false,
       hasIndex: false,
       withdrawals: false,
-      revertDataInReads: false,
+      readRevertBytes: "receipt",
+      readsPerMinute: 30,
       simulateCarriesValue: true,
       feesOnWrite: true,
     });
   });
 
-  it("records which node returns revert data on a failed read", () => {
-    // Bradbury returns the GenVM ReturnData, so a contract revert can be read
-    // out of the error. Studio Next returns "execution failed" and nothing
-    // more, which is what makes the discovery stop condition ambiguous there.
-    expect(NETWORKS.bradbury.capabilities.revertDataInReads).toBe(true);
-    expect(NETWORKS["studio-next"].capabilities.revertDataInReads).toBe(false);
+  it("records where a failed read puts the contract's revert bytes", () => {
+    // Both nodes send them. Bradbury puts the GenVM ReturnData in the error
+    // message; Studio Next puts it base64 in receipt.result, one level down in
+    // the JSON-RPC error's own data, and leaves `details` as the bare string
+    // "execution failed". The old flag said the second node sent none at all.
+    expect(NETWORKS.bradbury.capabilities.readRevertBytes).toBe("return-data");
+    expect(NETWORKS["studio-next"].capabilities.readRevertBytes).toBe("receipt");
+  });
+
+  it("records the read budget of the node that meters reads", () => {
+    // Measured: Studio Next refuses the thirty-first read of a minute with
+    // "Rate limit exceeded: 30 requests per minute". Bradbury has never
+    // refused one for rate, and null is what keeps every cadence in the app at
+    // the figure it was written with there.
+    expect(NETWORKS.bradbury.capabilities.readsPerMinute).toBeNull();
+    expect(NETWORKS["studio-next"].capabilities.readsPerMinute).toBe(30);
   });
 
   it("records which SDK major can simulate a payable call with its value", () => {

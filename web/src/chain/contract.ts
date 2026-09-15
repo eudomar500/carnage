@@ -1,7 +1,7 @@
 import { TransactionHashVariant, TransactionStatus } from "genlayer-js/types";
 import { capabilities, CARNAGE_ADDRESS, readClient, writeClient } from "./client";
 import { quoteFees, withFees } from "./fees";
-import { decodeGenvmError, tagStage } from "./errors";
+import { decodeGenvmError, isRateLimited, tagStage } from "./errors";
 
 /** The five-label rubric the jury returns. */
 export type Label = "TRUE" | "FALSE" | "MISLEADING" | "AMBIGUOUS" | "UNSUPPORTED" | "";
@@ -156,11 +156,33 @@ export function isUnknownMatch(err: unknown): boolean {
   // own words come back and the test is exact.
   if (decodeGenvmError(err).includes("unknown match_id")) return true;
 
-  // Studio Next's does not. The same read of an unminted id fails with
-  // details "execution failed" and nothing else: no ReturnData, no UserError
-  // text, and a viem shortMessage of "Missing or invalid parameters." So the
-  // walk that discovers matches saw its stop condition as a failed read and
-  // reported the list as possibly incomplete, on a network with one match.
+  // Studio Next carries them too, and this file did not know it. They are not
+  // in `details`, which is the bare "execution failed" below; they are base64
+  // in the JSON-RPC error's own data, which is what the registry now records
+  // as readRevertBytes: "receipt". Probed against the deployed contract on
+  // 2026-09-15, ids 4 and 5 both answer verbatim:
+  //
+  //   {"code":-32000,"message":"execution failed","data":{"receipt":{
+  //     "execution_result":"ERROR",
+  //     "result":"AVtFWFBFQ1RFRF0gdW5rbm93biBtYXRjaF9pZA==", ...}}}
+  //
+  // which decodes to "\x01[EXPECTED] unknown match_id", the same UserError
+  // Bradbury spells out in its ReturnData dump. Read here, the stop condition
+  // is the contract's own words on both networks rather than an inference from
+  // a capability flag.
+  if (receiptRevert(err).includes("unknown match_id")) return true;
+
+  // A throttled read is the node refusing to answer, not an answer. It has to
+  // be ruled out before the fallback below, which would otherwise be free to
+  // read any refusal as the end of the id list and truncate the record.
+  if (isRateLimited(err)) return false;
+
+  // Last, the fallback, for a node whose error carries no bytes anywhere the
+  // two readers above can find them. Studio Next's `details` is the bare
+  // string "execution failed": no ReturnData, no UserError text, and a viem
+  // shortMessage of "Missing or invalid parameters." Read on its own that is
+  // how the walk came to see its own stop condition as a failed read and
+  // report the list as possibly incomplete on a network with one match.
   //
   // On a network like that, a reverted get_match can only be this. get_match
   // reaches exactly one raise, _get_match's "unknown match_id", and has no
@@ -172,9 +194,28 @@ export function isUnknownMatch(err: unknown): boolean {
   // A transport fault does not say that: a timeout, a refused connection or a
   // rate limit arrives as a different error with a different shape, and stays
   // a failed read.
-  if (!capabilities().revertDataInReads && isExecutionFailure(err)) return true;
+  if (capabilities().readRevertBytes === "receipt" && isExecutionFailure(err)) return true;
 
   return false;
+}
+
+/**
+ * The contract's own words out of a v2 execution receipt.
+ *
+ * The receipt result is base64 with a one-byte kind marker in front of the
+ * UserError text, so the decoded string is searched rather than compared.
+ * Returns "" for anything that is not a receipt, including every transport
+ * failure, which carries no receipt at all.
+ */
+function receiptRevert(err: unknown): string {
+  const raw = (err as any)?.cause?.data?.receipt?.result;
+  if (typeof raw !== "string" || raw.length === 0) return "";
+  try {
+    return atob(raw);
+  } catch {
+    // Not base64. Nothing to read, and never a reason to fail a probe.
+    return "";
+  }
 }
 
 /** The node reporting that the contract ran and reverted, with no detail. */

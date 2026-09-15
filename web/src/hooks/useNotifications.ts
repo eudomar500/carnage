@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { coverageNote, discoverMatches, type Discovery } from "../chain/discovery";
+import {
+  coverageNote,
+  discoverMatches,
+  readsPerSweep,
+  type Discovery,
+} from "../chain/discovery";
+import { notificationSweepMs } from "../chain/pacing";
 import { noteObserved } from "../chain/grace";
 import { reconcileAll } from "../chain/journal";
 import {
@@ -22,6 +28,17 @@ import {
  * pure: this hook only decides when to read and holds the result.
  */
 
+/**
+ * How long the bell waits between sweeps, where reads are not counted.
+ *
+ * A sweep is not one read: it re-reads every match the wallet has a stake in
+ * and probes a couple past the end. On a node that meters reads the period is
+ * derived from that count and this hook's share of the budget, so a wallet
+ * with several matches does not quietly spend more of it than a wallet with
+ * one. On Studio Next the share works out at one read every twenty seconds, so
+ * three known matches plus the lookahead sweep every hundred seconds. See
+ * chain/pacing.ts.
+ */
 const REFRESH_MS = 45_000;
 
 export type NotificationFeed = {
@@ -129,7 +146,10 @@ export function useNotifications(wallet: `0x${string}` | null): NotificationFeed
       }
     })();
 
-    const id = setInterval(() => setNonce((n) => n + 1), REFRESH_MS);
+    // Read from the discovery this hook already holds, so the period follows
+    // the wallet's actual match count rather than a guess at it.
+    const period = notificationSweepMs(REFRESH_MS, readsPerSweep(discovery));
+    const id = setInterval(() => setNonce((n) => n + 1), period);
     return () => {
       cancelled = true;
       clearInterval(id);

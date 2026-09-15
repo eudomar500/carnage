@@ -7,9 +7,22 @@ import {
   type MatchView,
 } from "../chain/contract";
 import { classifyFailure, type FailureKind } from "../chain/errors";
+import { matchPollMs } from "../chain/pacing";
 
+/**
+ * How often an open match page re-reads its match.
+ *
+ * Twelve seconds is what this poll has always run at, and it is what it still
+ * runs at on a node that does not count reads. On one that does, the figure
+ * comes back stretched to the share of the budget a page left open is entitled
+ * to: Studio Next answers thirty reads a minute, this poll gets a tenth of
+ * them, and twelve seconds becomes twenty. See chain/pacing.ts.
+ */
 const POLL_MS = 12_000;
 const MAX_POLL_MS = 60_000;
+
+/** Resolved per call, not at import: the reader can change network mid-session. */
+const pollMs = () => matchPollMs(POLL_MS);
 
 export type MatchFeed = {
   view: MatchView | null;
@@ -75,7 +88,7 @@ export function useMatch(matchId: number | null): MatchFeed {
    */
   const run = useRef<{ cancelled: boolean }>({ cancelled: false });
   const hasView = useRef(false);
-  const delay = useRef(POLL_MS);
+  const delay = useRef(pollMs());
   /** Collapses overlapping reads so the watcher and the poll share one call. */
   const inflight = useRef<Promise<MatchState | null> | null>(null);
 
@@ -96,7 +109,7 @@ export function useMatch(matchId: number | null): MatchFeed {
       setDegraded(null);
       setNotFound(false);
       setTick((t) => t + 1);
-      delay.current = POLL_MS;
+      delay.current = pollMs();
       return next.accepted;
     } catch (e: any) {
       if (mine.cancelled) return null;
@@ -153,7 +166,7 @@ export function useMatch(matchId: number | null): MatchFeed {
     // which is the wrong match to judge a postcondition against.
     inflight.current = null;
     hasView.current = false;
-    delay.current = POLL_MS;
+    delay.current = pollMs();
     // Switching match id must not leave the previous match's state on screen
     // while the first read of the new one is still in flight.
     setView(null);

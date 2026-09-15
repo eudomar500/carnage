@@ -15,7 +15,11 @@ import {
   convergenceSummary,
   corpusNote,
   corpusShape,
+  crossTabFooter,
+  crossTabOpener,
   gradingMatrix,
+  hedgeNote,
+  rowAxisNote,
   injectionStats,
   labelDistribution,
   stakeSpread,
@@ -134,13 +138,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const scoredRows = useMemo(() => rows.filter((r) => r.truth.verifiable), [rows]);
   const unscoredRows = useMemo(() => rows.filter((r) => !r.truth.verifiable), [rows]);
 
-  // Two statements about the grading matrix that must not be typed as facts.
-  // They are true of the record today; they are printed only while they stay
-  // true, so the page cannot drift into claiming something the table denies.
-  const flatOnlyOnNumbers = useMemo(
-    () => rows.every((r) => r.truth.verifiable || (r.label !== "TRUE" && r.label !== "FALSE")),
-    [rows],
-  );
+  // The two sentences about the grading matrix that must not be typed as
+  // facts. Both are computed from the same rows the table is built from and
+  // printed only while they hold, so the page cannot open a section by denying
+  // the figures underneath it. Where they do not hold, each returns one
+  // neutral sentence saying what the table shows instead.
+  const gradingOpener = useMemo(() => crossTabOpener(rows), [rows]);
+  const gradingFooter = useMemo(() => crossTabFooter(rows), [rows]);
   const numbersJudgedOnTheirNumber = agree.verifiable > 0 && agree.agreed === agree.verifiable;
 
   const lookup: VerdictLookup = {
@@ -442,13 +446,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             <section className="lab-section" id="grading">
               <Tag kind="live" />
               <h2 className="lab-h2">CLAIM TYPE AGAINST LABEL</h2>
-              <p className="lab-body">
-                In this record TRUE and FALSE appear only on claims the evidence
-                can settle. The claims it cannot settle drew MISLEADING or
-                UNSUPPORTED. One reading of that is a jury grading degrees rather
-                than sorting into true and false; see the limits below for why
-                the row axis makes that reading partly circular.
-              </p>
+              <p className="lab-body">{gradingOpener}</p>
               <p className="lab-body">
                 The table crosses the kind of claim, down the side, against the
                 label the jury gave it, across the top. Both axes come off the
@@ -468,14 +466,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   Every claim that stated its own number was judged on that
                   number, TRUE when it matched what the party had revealed and
                   FALSE when it did not, with no exceptions in the record.
-                  {flatOnlyOnNumbers ? (
-                    <>
-                      {" "}
-                      And no claim without a checkable number was ever called
-                      TRUE or FALSE. Those drew MISLEADING or UNSUPPORTED
-                      instead.
-                    </>
-                  ) : null}
+                  {gradingFooter ? <> {gradingFooter}</> : null}
                 </p>
               ) : null}
             </section>
@@ -821,6 +812,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   record, found by a keyword filter that a differently worded
                   attempt would pass.
                 </li>
+                <li>{hedgeNote()}</li>
                 <li>
                   AMBIGUOUS returned on {ambiguous} of {rows.length} claims.
                 </li>
@@ -829,12 +821,7 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   without a verdict. None has run on the deployed contract, so no
                   figure here describes one.
                 </li>
-                <li>
-                  In the claim-type table the row axis is derived by the same
-                  extractor that decides what is scorable, so "flat labels only
-                  on checkable claims" is in part a statement about the
-                  extractor. The two axes are not independent.
-                </li>
+                <li>{rowAxisNote(rows)}</li>
                 <li>
                   Match discovery caches the id list for ten minutes and probes
                   two ids past the highest one it knows, so three or more matches

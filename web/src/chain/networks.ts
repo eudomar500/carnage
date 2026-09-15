@@ -41,15 +41,38 @@ import { studioDevnet } from "genlayer-js-next/chains";
  *                there either, which is why funding an address on that network
  *                is still not optional: see feesOnWrite.
  *
- *   revertDataInReads
- *                a failed read carries the contract's own revert bytes.
- *                True on Bradbury, whose node returns
+ *   readRevertBytes
+ *                where a failed read carries the contract's own revert bytes.
+ *                Both nodes send them; they do not send them in the same
+ *                place, and this says which.
+ *
+ *                "return-data" on Bradbury, whose error message is the whole
+ *                VMResult as a Go debug dump,
  *                "execution failed: &genvm.VMResult{Kind:0x1, ReturnData:
- *                []uint8{...}}" with the UserError text inside, which is what
- *                lets a caller tell "unknown match_id" from a node fault.
- *                False on Studio Next, where the same read fails with nothing
- *                but "execution failed" and the two are indistinguishable from
- *                the error alone. See isUnknownMatch in chain/contract.ts.
+ *                []uint8{...}}", with the UserError text as bytes inside it.
+ *
+ *                "receipt" on Studio Next, whose `details` is the bare string
+ *                "execution failed" and whose bytes are one level down in the
+ *                JSON-RPC error's own data, base64 in receipt.result. Probing
+ *                an unminted id on 2026-09-15 returned
+ *                "AVtFWFBFQ1RFRF0gdW5rbm93biBtYXRjaF9pZA==", which decodes to
+ *                "\x01[EXPECTED] unknown match_id".
+ *
+ *                This was recorded as revertDataInReads: a boolean that said
+ *                Studio Next sent no revert data at all, which was wrong, and
+ *                left isUnknownMatch inferring the stop condition from a bare
+ *                execution failure instead of reading the contract's words.
+ *                isUnknownMatch now reads both places and consults this only
+ *                for the fallback. See chain/contract.ts.
+ *
+ *   readsPerMinute
+ *                how many contract reads the node will answer in a minute, or
+ *                null where it does not meter them. 30 on Studio Next, which
+ *                refuses the rest with
+ *                "Rate limit exceeded: 30 requests per minute". Null on
+ *                Bradbury, which has never refused one for rate. Every read
+ *                cadence in the app is derived from this; see chain/pacing.ts
+ *                for how the budget is divided.
  *
  *   simulateCarriesValue
  *                simulateWriteContract can carry the call's value, so a
@@ -93,11 +116,16 @@ export type SdkId = "v1" | "v2";
 
 export type NetworkId = "bradbury" | "studio-next";
 
+/** Where a failed read puts the contract's revert bytes. Never "nowhere". */
+export type RevertBytesLocation = "return-data" | "receipt";
+
 export type Capabilities = {
   hasTxLog: boolean;
   hasIndex: boolean;
   withdrawals: boolean;
-  revertDataInReads: boolean;
+  readRevertBytes: RevertBytesLocation;
+  /** Contract reads the node answers per minute, or null where it does not meter. */
+  readsPerMinute: number | null;
   simulateCarriesValue: boolean;
   feesOnWrite: boolean;
 };
@@ -175,7 +203,8 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasTxLog: true,
       hasIndex: true,
       withdrawals: true,
-      revertDataInReads: true,
+      readRevertBytes: "return-data",
+      readsPerMinute: null,
       simulateCarriesValue: false,
       feesOnWrite: false,
     },
@@ -210,7 +239,8 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       hasTxLog: false,
       hasIndex: false,
       withdrawals: false,
-      revertDataInReads: false,
+      readRevertBytes: "receipt",
+      readsPerMinute: 30,
       simulateCarriesValue: true,
       feesOnWrite: true,
     },
