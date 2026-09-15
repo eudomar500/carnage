@@ -30,8 +30,19 @@ describe("network registry", () => {
     expect(NETWORKS["studio-next"].chainId).toBe(61997);
   });
 
-  it("uses the canonical Studio Next RPC", () => {
-    expect(NETWORKS["studio-next"].rpcUrl).toBe("https://studio-dev.genlayer.com/api");
+  it("uses the published Studio Next RPC", () => {
+    expect(NETWORKS["studio-next"].rpcUrl).toBe("https://studio-next.genlayer.com/api");
+  });
+
+  it("dials the host its row names, on every network", () => {
+    // rpcUrl is only the wallet_addEthereumChain offer; chain.rpcUrls is what
+    // genlayer-js actually requests. studioDevnet ships studio-dev, so the
+    // registry overrides it, and a wallet added under one host reading from
+    // another is exactly what this stops.
+    for (const id of NETWORK_IDS) {
+      const net = networkById(id);
+      expect(net.chain.rpcUrls.default.http[0]).toBe(net.rpcUrl);
+    }
   });
 
   it("binds each network to the SDK major that can talk to it", () => {

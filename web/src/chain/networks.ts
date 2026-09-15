@@ -137,6 +137,24 @@ export type NetworkDef = {
 const BRADBURY_EXPLORER = "https://explorer-bradbury.genlayer.com";
 const STUDIO_NEXT_EXPLORER = "https://explorer-studio-dev.genlayer.com";
 
+/**
+ * The published Studio Next RPC.
+ *
+ * The network is published under studio-next.genlayer.com, which is the name
+ * the hackathon announcement gives for it. studio-dev.genlayer.com answers the
+ * same chain -- both hosts return 0xf22d for eth_chainId and serve the same
+ * deployed contract -- but the published name is the one the app points at.
+ *
+ * It is named here because two things have to agree on it and only one of them
+ * is ours. `rpcUrl` below is what the wallet_addEthereumChain payload offers,
+ * and `chain.rpcUrls` is what genlayer-js actually dials; the SDK's own
+ * studioDevnet definition still ships studio-dev, so the chain object is
+ * overridden from this constant rather than left to disagree with the row
+ * around it. Bradbury needs no such override: testnetBradbury already carries
+ * the same host its row does.
+ */
+const STUDIO_NEXT_RPC = "https://studio-next.genlayer.com/api";
+
 export const NETWORKS: Record<NetworkId, NetworkDef> = {
   bradbury: {
     id: "bradbury",
@@ -169,9 +187,12 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
     label: "STUDIO NEXT",
     name: "GenLayer Studio Next",
     chainId: 61997,
-    chain: studioDevnet,
+    chain: {
+      ...studioDevnet,
+      rpcUrls: { ...studioDevnet.rpcUrls, default: { http: [STUDIO_NEXT_RPC] } },
+    },
     sdk: "v2",
-    rpcUrl: "https://studio-dev.genlayer.com/api",
+    rpcUrl: STUDIO_NEXT_RPC,
     contract: "0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0",
     explorerTx: STUDIO_NEXT_EXPLORER,
     explorerAddress: STUDIO_NEXT_EXPLORER,
