@@ -214,7 +214,7 @@ A second deployment runs the same mechanics on the v0.6 stack. [Networks](#netwo
 
 - **Contract.** The full lifecycle plus the four deterministic exits and the two-step sink handover.
 - **Security.** A full audit against an earlier deployment produced 22 findings across four severities, all resolved in the deployed contract. See [docs/security-audit.md](docs/security-audit.md) for the summary and [docs/resolution.md](docs/resolution.md) for how a match resolves. The Studio Next fork has no audit of its own: it differs from `carnage.py` only in the v0.6 SDK renames and the withdrawals flag, and it is covered by its own direct-mode suite.
-- **Tests.** 128 direct-mode contract tests for `carnage.py`, 50 of them pinning audit findings closed, and 131 for the Studio Next fork. 310 front-end tests across 17 files.
+- **Tests.** 128 direct-mode contract tests for `carnage.py`, 50 of them pinning audit findings closed, and 131 for the Studio Next fork. 334 front-end tests across 19 files.
 - **Fund safety.** No reachable state strands funds. Every failure state has a permissionless, deadline-gated recovery any caller can trigger, so a match cannot be held hostage by the side that walked away.
 - **Front end.** The lifecycle from creating a match to claiming a payout, the recovery paths, notifications for anything needing attention, a replay that reconstructs a match from contract state with links to the transactions that prove each step, and Carnage Labs.
 
