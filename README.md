@@ -135,6 +135,8 @@ The page reports the label distribution, a cross-tab of claim type against retur
 
 ## The record so far
 
+The figures below describe the record as of 2026-09-16. Carnage Labs is live and recomputes every figure from the contract on each visit, so a match played after that date on either network, including one played by following the walkthrough under [Playing a match](#playing-a-match), lands in that network's Labs page and moves these counts. The README is the snapshot; the page is the record.
+
 Nine matches, all adjudicated and settled. Every match on the record shares one band (500 to 1000), one stake (0.01 GEN per side) and one deal price (750). Eight of the nine also share one pair of revealed constraints (650 and 900); match 9 revealed 2400 and 4200, both outside the band, and is the first match whose coherence flag was recorded false. Across the nine matches the claim text is the main thing that varies, which is what keeps the label close to the only moving part.
 
 | Match | Holder / Buyer | Holder | Buyer | Sink |
