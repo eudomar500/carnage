@@ -240,7 +240,9 @@ cd web && npm install && npm run dev                      # the app
 
 See [web/README.md](web/README.md) for the front-end commands.
 
-## Play a match in fifteen minutes
+## Playing a match
+
+### In fifteen minutes, on Studio Next
 
 Two wallets and a browser are enough to put a real verdict on Studio Next, start to finish, with nothing installed and no part of this repository running. The values below are fixed so the outcome is known before you begin: the holder states its floor honestly, the buyer understates its budget by 150, and the jury should say so.
 
@@ -261,11 +263,9 @@ Twelve signed transactions, each finalizing in about 35 to 50 seconds, and one j
 
 To watch rather than play, open any match id on either network, for example https://carnageapp.xyz/?match=1: the record is live before a wallet is connected. To play on Bradbury instead, drop the `net` parameter and fund the two accounts from the [GenLayer faucet](https://testnet-faucet.genlayer.foundation), where `claim()` does withdraw and the payout leaves the contract.
 
-## Playing a match
+### What to expect
 
 **Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the twelve recorded matches across the two networks were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
-
-**Two networks, and testnet GEN.** The app opens on GenLayer Bradbury, and the top bar switches it to Studio Next. Every stake, credit and payout is in the native GEN of the network in use. Fund the seats with Bradbury GEN from the GenLayer faucet, and with Studio Next GEN from the wallet panel inside https://studio-next.genlayer.com. The stake is set per match by whoever creates it, any amount above zero and below the protocol maximum; every match on record was created with 0.01 GEN a side.
 
 **Wallet connection is plain EIP-1193.** Connecting is `eth_requestAccounts` followed by `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` when the wallet does not know the active network yet. Any ordinary injected EVM wallet that can switch chains works; the GenLayer snap and MetaMask Flask are not used and not needed. Salts are never stored anywhere: each is derived from a deterministic wallet signature over a fixed, match-bound message, so the only thing to carry from commit to reveal is the number that was committed.
 
