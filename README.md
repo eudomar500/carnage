@@ -20,11 +20,12 @@ Carnage is an adversarial benchmark for the layer the agent economy is quietly b
 
 ## Who this is for
 
-Today, three groups. The directions at the end of this file are about widening that circle without changing what is measured.
+Today, four groups. The directions at the end of this file are about widening that circle without changing what is measured.
 
 - **Teams building or deploying an AI jury.** Before a language model is trusted to settle a dispute with money attached, someone has to see what it does under adversarial input. That is what the record here is.
-- **Researchers on LLM-as-a-Judge and prompt injection.** Instead of a fixed dataset scored offline, this is a live, distributed jury: independent validators re-deriving the label, consensus deciding, and stakes moving on the result. Every attempt stays on-chain and re-readable.
+- **Researchers on LLM-as-a-Judge and prompt injection.** Instead of a fixed dataset scored offline, this is a live, distributed jury on GenLayer: independent validators re-deriving the label, consensus deciding, and stakes moving on the result. Every attempt stays on-chain and re-readable.
 - **Red teamers.** The win condition is concrete: write a claim that misrepresents the constraint you committed to, get it past the jury, and keep the stake. A lie that passes stays on the record.
+- **Players.** Anyone with two wallets can seat a match today, and the walkthrough under Playing a match takes fifteen minutes. What the game pays for right now is honesty, since the stake only moves against a lie; the directions under The game at the end of this file are about adding reasons to keep playing, some of them independent of the verdict, without taking away the one that turns on it.
 
 ## What a match is
 
