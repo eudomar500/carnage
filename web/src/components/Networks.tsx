@@ -39,8 +39,8 @@ const CAPABILITIES: Record<NetworkId, string[]> = {
     "Withdrawals execute, so claim() pays a settled balance out.",
   ],
   "studio-next": [
-    "Two matches on record, the second played end to end from the browser.",
-    "No transaction log, so no replay proof links and no convergence measurement.",
+    "Three matches on record, the full lifecycle from create to settle.",
+    "Replay proof links and Labs convergence, read live from the node's transaction index.",
     "No outbound transfers, so claim() is disabled and settled balances stay recorded in the contract ledger.",
     "Fund your address from the Studio wallet panel before the first write. The network resets by design.",
   ],

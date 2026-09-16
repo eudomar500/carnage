@@ -16,7 +16,7 @@ Two seats, Holder and Buyer, each held by a wallet. The two sides negotiate a pr
 
 ## Why this matters
 
-Carnage is an adversarial benchmark for the layer the agent economy is quietly betting on: an AI jury that reads natural-language claims and returns a verdict with money attached, and that layer has a known weakness. A growing body of research on "LLM-as-a-Judge" systems, the paradigm of using a language model to evaluate text, has shown that these judges can be manipulated by the very inputs they are asked to judge, and recent work formalizing prompt-injection attacks against judge architectures reports attack success rates above 30 percent against current models ([Investigating the Vulnerability of LLM-as-a-Judge Architectures to Prompt-Injection Attacks](https://arxiv.org/abs/2505.13348) and [Optimization-based Prompt Injection Attack to LLM-as-a-Judge](https://arxiv.org/abs/2403.17710); both reported in published research, not Carnage measurements). The recorded matches are built to test that weakness, with claims written to mislead the jury, one written to attack it directly, and honest claims alongside as the baseline, every one on the record.
+Carnage is an adversarial benchmark for the layer the agent economy is quietly betting on: an AI jury that reads natural-language claims and returns a verdict with money attached, and that layer has a known weakness. A growing body of research on "LLM-as-a-Judge" systems, the paradigm of using a language model to evaluate text, has shown that these judges can be manipulated by the very inputs they are asked to judge, and recent work formalizing prompt-injection attacks against judge architectures reports attack success rates above 30 percent against current models ([Investigating the Vulnerability of LLM-as-a-Judge Architectures to Prompt-Injection Attacks](https://arxiv.org/abs/2505.13348) and [Optimization-based Prompt Injection Attack to LLM-as-a-Judge](https://arxiv.org/abs/2403.17710); both reported in published research, not Carnage measurements). The recorded matches are built to test that weakness, with claims written to mislead the jury, two written to attack it directly, one with an instruction and one with forged evidence, and honest claims alongside as the baseline, every one on the record.
 
 ## Who this is for
 
@@ -84,7 +84,7 @@ The evidence cannot be tampered with after it is sealed. The number a side revea
 
 Consensus runs through `gl.vm.run_nondet`. The leader classifies; each validator **re-runs the same prompt itself** and returns whether its own label equals the leader's. Only the label is compared. The free-form reasoning is stored on the match for the record and never enters the comparison.
 
-Consensus alone does not defend against prompt injection: an injection that fooled every validator identically would converge on the wrong answer. The defence lives in prompt construction. The record holds **one** injection-shaped claim, so this is one case and not a suite. `test_injected_claim_stays_inside_claim_delimiters` pins the delimiting.
+Consensus alone does not defend against prompt injection: an injection that fooled every validator identically would converge on the wrong answer. The defence lives in prompt construction. The record holds **two** injection-shaped claims of different kinds, so this is two cases and not a suite. `test_injected_claim_stays_inside_claim_delimiters` pins the delimiting.
 
 ## Settlement
 
@@ -156,7 +156,7 @@ Match 3, at a deal price of 750, put a hedge and a forgery in front of the jury 
 
 Each verdict links to the adjudicate transaction that wrote it on the [Studio explorer](https://explorer-studio-dev.genlayer.com/address/0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0). Three adjudicate transactions produced the three verdicts, none discarded, each accepted on its first attempt with a rotation count of zero.
 
-**AMBIGUOUS has not been observed.** Four of the five labels have been returned across the eighteen claims; the fifth has not come up in these nine matches. Match 9's holder claim was written to draw it, and the jury returned MISLEADING instead, so AMBIGUOUS is still unobserved after a deliberate attempt to produce it.
+**AMBIGUOUS has not been observed.** Four of the five labels have been returned across the twenty-four claims on both networks; the fifth has not come up in twelve matches. Match 9's holder claim was written to draw it, and the jury returned MISLEADING instead, so AMBIGUOUS is still unobserved after a deliberate attempt to produce it.
 
 ## Rounds the jury threw away
 
@@ -258,11 +258,11 @@ A plain-language walkthrough of a full match is on the site: [How Carnage works,
 
 Carnage does not claim AI adjudication is perfect, and most of what follows is a limit the evidence has not cleared rather than a design position.
 
-The corpus is nine matches, near-uniform by construction, played by two wallets. That is enough to demonstrate a method and not enough to establish a rate. The stake on the record is 0.01 GEN on a testnet: the incentive structure is fully implemented, the pressure it exerts is symbolic.
+The corpus is twelve matches across two networks, near-uniform by construction, played from four wallets by one person. That is enough to demonstrate a method and not enough to establish a rate. The stake on the record is 0.01 GEN on a testnet: the incentive structure is fully implemented, the pressure it exerts is symbolic.
 
 Semantic judgments can be hard and validators can disagree, which is not hypothetical here: two of fourteen adjudicate transactions across the two networks failed to reach an accepted result, both on Bradbury. Those are limits on how confidently a claim can be judged, not on whether the money is safe. A judgment the jury cannot reach ends in a deadline-gated resolution that returns every stake.
 
-Prompt injection is measured, not declared solved, and one flagged claim is an anecdote. The Labs injection filter is a short list of keyword patterns; a differently worded attempt would not be caught, which is a limit of the filter and not a finding about the jury.
+Prompt injection is measured, not declared solved, and two flagged claims are anecdotes. The Labs injection filter is a short list of keyword patterns; a differently worded attempt would not be caught, which is a limit of the filter and not a finding about the jury.
 
 Privacy exists only during off-chain negotiation. Claims are stored in plaintext from the moment they are anchored, and constraints are public from the reveal. Nothing on-chain is confidential.
 
@@ -276,7 +276,7 @@ Twelve matches across two networks say what they say: on this record no claim th
 
 - More operators. Every match so far was played by one person from two wallets. An open lobby, where a seat can be taken by whoever arrives, turns the corpus from one author's writing into a sample.
 - Paraphrase families. The same lie in five wordings, played against the same committed number, measures whether the jury is consistent across phrasing rather than across sentences it has already seen.
-- Deliberate attempts at the labels the record lacks: AMBIGUOUS, which has not been returned in eighteen claims, and injections shaped differently from the one on record, which the current filter would not recognise.
+- Deliberate attempts at the labels the record lacks: AMBIGUOUS, which has not been returned in twenty-four claims, and injections shaped differently from the two on record, which the current filter would not recognise.
 - Stake and band as variables. Every match shares one stake and one band; playing others tests whether the amount at risk changes what the jury returns.
 - A downloadable corpus: every claim, label, reasoning and transaction hash as one file, regenerated from the chain, so a researcher can work on the record without opening the app.
 
