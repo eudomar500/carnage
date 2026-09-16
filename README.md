@@ -240,6 +240,27 @@ cd web && npm install && npm run dev                      # the app
 
 See [web/README.md](web/README.md) for the front-end commands.
 
+## Play a match in fifteen minutes
+
+Two wallets and a browser are enough to put a real verdict on Studio Next, start to finish, with nothing installed and no part of this repository running. The values below are fixed so the outcome is known before you begin: the holder states its floor honestly, the buyer understates its budget by 150, and the jury should say so.
+
+**Before you start.** Enable exactly one injected EVM wallet extension. Two of them enabled at once fight over `window.ethereum`, and the one that answers is not always the one you clicked. Create two accounts in it, A and B, and fund both from the wallet panel inside https://studio-next.genlayer.com: Fund Account, 10 GEN each is plenty. The network never debits what it quotes, but a wallet refuses to sign from an address that reads a zero balance, so the funding is not optional. Then open https://carnageapp.xyz/?net=studio-next&app=1 and press CONNECT WALLET. The app asks the wallet to add and switch to chain 61997 itself, so there is nothing to configure by hand.
+
+Twelve signed transactions, each finalizing in about 35 to 50 seconds, and one jury call that takes one to three minutes.
+
+1. **CREATE**, with account A. Holder A, buyer B, band 500 to 1000, stake 0.01, deadlines as proposed. All of those are the defaults, so the only field to fill is the buyer address.
+2. **COMMIT** as A: `650`. That is the holder's true floor, sealed before anything is said.
+3. **Switch the wallet to B**, then **COMMIT**: `900`. The page follows the active account, so switching in the extension is the whole handover.
+4. **FUND** as B: 0.01.
+5. **FUND** as A: 0.01. Escrow now holds 0.02 and both seats can act.
+6. **PRICE**: A proposes 750, B proposes 750. The price locks the moment the two proposals are equal; an unequal pair simply waits.
+7. **ANCHOR CLAIMS**: A anchors `My minimum price is 650.` and B anchors `My maximum budget is 750.` B committed 900, so that second claim is short by 150. Nothing on-chain says so yet, and nothing has revealed anything.
+8. **REVEAL** as A, then as B. The app derives the number and the salt from a wallet signature, so there is nothing to have kept: approve the signature, then the transaction.
+9. **ADJUDICATE**, with either account. Summoning the jury is permissionless, so the seat that triggers it does not matter.
+10. **Read the verdict.** Expect TRUE on the holder and FALSE on the buyer, STATUS SETTLED, the holder credited 0.02 GEN and the buyer 0. The verdict frame carries the adjudicate hash with a link to the Studio explorer, which is the proof that the label came from the chain rather than the page. No claim button appears: withdrawals do not execute on that network, so the credited balance stays recorded in the contract ledger. The match joins the live measurements in [Carnage Labs](https://carnageapp.xyz/?net=studio-next&lab=1) within ten minutes, because discovery caches the id list.
+
+To watch rather than play, open any match id on either network, for example https://carnageapp.xyz/?match=1: the record is live before a wallet is connected. To play on Bradbury instead, drop the `net` parameter and fund the two accounts from the [GenLayer faucet](https://testnet-faucet.genlayer.foundation), where `claim()` does withdraw and the payout leaves the contract.
+
 ## Playing a match
 
 **Two wallets, one per seat.** `create_match` seats a holder address and a buyer address and rejects a match where the two are equal, so a single address cannot hold both sides. The same person can hold both wallets and switch accounts between turns, which is how the twelve recorded matches across the two networks were played. Opening a match, summoning the jury and every recovery path are permissionless, so a third wallet can do any of them without holding a seat, and watching takes no wallet at all: the match state is live before anything is connected.
