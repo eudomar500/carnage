@@ -139,35 +139,61 @@ describe("precedence at page load", () => {
 });
 
 describe("history constants follow the resolved network", () => {
-  it("disowns the committed index when the load is not for Bradbury", async () => {
+  it("loads the index built for the resolved network, not the default one", async () => {
     vi.resetModules();
     vi.stubGlobal("localStorage", fakeStorage());
     setLocation("?net=studio-next");
     const history = await import("./history");
-    // history.ts computes these at import time against CARNAGE_ADDRESS. If
-    // resolution ran later than this module, they would describe Bradbury.
-    expect(history.HISTORY_MATCHES_CONTRACT).toBe(false);
-    expect(history.HISTORY.transactions).toEqual([]);
-    expect(history.historyByMethod("adjudicate")).toEqual([]);
+    // history.ts picks the index at import time by comparing each file's
+    // contract against CARNAGE_ADDRESS. If resolution ran later than this
+    // module, this would be Bradbury's file against Studio Next's address.
+    expect(history.HISTORY_MATCHES_CONTRACT).toBe(true);
+    expect(history.HISTORY.contract).toBe("0xB84f059D11FA6ea4c24f2d5c124686f4b72078e0");
+    expect(history.HISTORY.transactions.length).toBeGreaterThan(0);
+    expect(history.historyByMethod("adjudicate").length).toBeGreaterThan(0);
   });
 
-  it("hands the lab an empty index on a network that has none", async () => {
+  it("reports that index's reach in the units that network has", async () => {
     vi.resetModules();
     vi.stubGlobal("localStorage", fakeStorage());
     setLocation("?net=studio-next");
-    // indexedAttempts walks HISTORY.transactions, so this is the lab's own
-    // view of the same constants: nothing from Bradbury's index reaches it.
-    const lab = await import("../hooks/useLabData");
-    expect(lab.indexedAttempts().size).toBe(0);
-    expect(lab.latestSettlement()).toBeNull();
+    const history = await import("./history");
+    // Studio Next numbers no blocks. A block number here would be Bradbury's,
+    // and every sentence built from it would quote one chain's height against
+    // another chain's record.
+    expect(history.SNAPSHOT_BLOCK).toBeNull();
+    expect(history.DEPLOY_BLOCK).toBeNull();
+    expect(history.SNAPSHOT_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(history.HISTORY.transactions.every((e) => e.block === null)).toBe(true);
+    expect(history.HISTORY.transactions.every((e) => typeof e.at === "string")).toBe(true);
   });
 
-  it("keeps the committed index on Bradbury", async () => {
+  it("hands the lab that network's own attempts and nobody else's", async () => {
+    vi.resetModules();
+    vi.stubGlobal("localStorage", fakeStorage());
+    setLocation("?net=studio-next");
+    const lab = await import("../hooks/useLabData");
+    const attempts = lab.indexedAttempts();
+    expect(attempts.size).toBeGreaterThan(0);
+    // Bradbury's index holds eleven adjudicate transactions across nine
+    // matches. Reading any of them here would mean the wrong file loaded.
+    expect(attempts.size).toBeLessThan(9);
+    for (const list of attempts.values()) {
+      expect(list.every((a) => a.block === null && typeof a.at === "string")).toBe(true);
+    }
+    // The corpus date costs no read on this network: its index records a time
+    // per transaction, so the day is already in the file.
+    expect(lab.latestSettlement()?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("keeps the committed index, and its blocks, on Bradbury", async () => {
     vi.resetModules();
     vi.stubGlobal("localStorage", fakeStorage());
     setLocation("");
     const history = await import("./history");
     expect(history.HISTORY_MATCHES_CONTRACT).toBe(true);
+    expect(history.HISTORY.contract).toBe("0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A");
     expect(history.HISTORY.transactions.length).toBeGreaterThan(0);
+    expect(typeof history.SNAPSHOT_BLOCK).toBe("number");
   });
 });

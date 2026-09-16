@@ -1,23 +1,36 @@
 import { abi } from "genlayer-js";
 import { fromRlp, hexToBytes, parseAbiItem, type AbiEvent } from "viem";
-import { activeNetwork, CARNAGE_ADDRESS, CHAIN, readClient } from "./client";
-import { addressUrl, txUrl } from "./networks";
+import { activeNetwork, capabilities, CARNAGE_ADDRESS, CHAIN, readClient } from "./client";
+import { addressUrl, txUrl, type TxIndexSource } from "./networks";
 import { isRateLimited } from "./errors";
 import {
   historyFor,
   isTerminalStatus,
+  SNAPSHOT_AT,
   SNAPSHOT_BLOCK,
   staleEntries,
   type HistoryEntry,
 } from "./history";
+import { fetchContractTransactions } from "./txindex";
 
 /**
  * Recovers the real transaction hash behind each step of a match.
  *
- * Two sources, and this is the one place the split is explained. Everything up
- * to the index's snapshot block is answered from src/chain/history.json, a
- * file built by scripts/snapshot.mjs and committed. Everything after it is
- * scanned live from the consensus log.
+ * Two sources on every network, and this is the one place the split is
+ * explained. A committed index answers the past, and a live read answers
+ * whatever has happened since. What differs between the networks is only where
+ * the live half comes from, which the registry records as txIndexSource.
+ *
+ * On Bradbury the live half is the consensus contract's transaction log,
+ * scanned in windows from the chain tip back to the index's snapshot block.
+ * That walk is the body of this file.
+ *
+ * On Studio Next there is no such log, and for a while that was taken to mean
+ * the network could carry no proof links at all. It can. Its node answers
+ * sim_getTransactionsForAddress with the contract's whole history in one
+ * response, so the live half there is a single request and no windowing at
+ * all. chain/txindex.ts makes it; scanFromRpcIndex below merges it over the
+ * committed index exactly as the window walk does.
  *
  * The index is not an optimisation, it is the only thing that keeps old
  * matches reachable. Bradbury refuses any eth_getLogs range wider than 10000
@@ -68,11 +81,33 @@ const LINKED = new Set<string>(LINKED_METHODS);
 export type MatchTx = {
   method: LinkedMethod;
   txId: `0x${string}`;
-  /** Block the consensus contract announced it in. */
-  block: string;
+  /**
+   * Block the consensus contract announced it in, or null on a network that
+   * numbers no blocks. Null on every Studio Next transaction, where `at` is
+   * what orders and what the proof strip prints instead.
+   */
+  block: string | null;
+  /**
+   * When the node recorded it, ISO 8601 to the second, or null where the
+   * source reports none. Null on every Bradbury transaction, whose source is a
+   * log filter that reports blocks and not times.
+   */
+  at: string | null;
   /** Transaction status at the time it was read, e.g. FINALIZED. */
   status: string;
 };
+
+/**
+ * Newest first, in whichever order the network actually has.
+ *
+ * Blocks where there are blocks, time where there is not. The two are never
+ * compared against each other: one scan reads one deployment, and every
+ * transaction in it reports the same one of the two.
+ */
+export function newestFirst(a: MatchTx, b: MatchTx): number {
+  if (a.block !== null && b.block !== null) return Number(b.block) - Number(a.block);
+  return Date.parse(b.at ?? "") - Date.parse(a.at ?? "");
+}
 
 export type ScanOutcome = {
   /** Newest first, at most one entry per method except `claim`. */
@@ -85,8 +120,17 @@ export type ScanOutcome = {
   exhausted: boolean;
   /** Set when the scan stopped early for a transport reason. */
   degraded: string | null;
-  /** The block the committed index answers through. */
-  snapshotBlock: number;
+  /** Where the live half of this answer came from. See chain/networks.ts. */
+  source: TxIndexSource;
+  /** The block the committed index answers through, or null where none does. */
+  snapshotBlock: number | null;
+  /**
+   * The day the committed index was taken, or null where the index records no
+   * date. Reported alongside the block rather than instead of it: one network
+   * has blocks and no dates, the other dates and no blocks, and the copy needs
+   * whichever it has without importing the index itself.
+   */
+  snapshotAt: string | null;
   /**
    * True when the live tail was wider than MAX_WINDOWS could cover, so the
    * blocks immediately above the snapshot were never read.
@@ -272,9 +316,27 @@ export function historyEntryToTx(e: HistoryEntry): MatchTx | null {
   return {
     method: e.method as LinkedMethod,
     txId: e.hash,
-    block: String(e.block),
+    block: e.block === null ? null : String(e.block),
+    at: e.at ?? null,
     status: e.status,
   };
+}
+
+/**
+ * Index entries for one match, converted and filtered to the linked methods.
+ *
+ * Both live sources need exactly this, over a different set of entries: the
+ * committed index for the tail walk, and the node's listing for the one-shot
+ * read. Keeping it in one place is what stops the two drifting on which
+ * methods count.
+ */
+function entriesToTxs(entries: HistoryEntry[]): MatchTx[] {
+  const out: MatchTx[] = [];
+  for (const e of entries) {
+    const tx = historyEntryToTx(e);
+    if (tx) out.push(tx);
+  }
+  return out;
 }
 
 /**
@@ -298,7 +360,7 @@ export function mergeMatchTxs(live: MatchTx[], indexed: MatchTx[]): MatchTx[] {
     out.push(tx);
   }
 
-  return out.sort((a, b) => Number(b.block) - Number(a.block));
+  return out.sort(newestFirst);
 }
 
 /**
@@ -354,25 +416,27 @@ export type ScanOptions = {
 };
 
 /**
- * Walks back from the chain tip until every required method has been found.
+ * Every transaction this app will link for one match, from both of its sources.
  *
- * Reads newest first so that a live match, whose interesting transactions are
- * near the tip, resolves in one or two windows.
+ * The committed index first, because it is free and already complete for
+ * everything up to its snapshot. Then whatever the network's live source adds
+ * on top, which is a window walk on Bradbury and a single listing request on
+ * Studio Next. Both merge the same way and answer the same shape, so nothing
+ * above this function knows which network it is on.
  */
 export async function scanMatchTransactions(
   matchId: bigint,
   required: LinkedMethod[],
   opts: ScanOptions = {},
 ): Promise<ScanOutcome> {
+  const source = capabilities().txIndexSource;
+
   // The index first. It is free, it is already complete for everything at or
   // below the snapshot, and knowing what it holds is what lets the live walk
   // stop early instead of hunting for a transaction that is already in hand.
-  const indexed: MatchTx[] = [];
-  const stale: HistoryEntry[] = staleEntries(historyFor(matchId, LINKED));
-  for (const entry of historyFor(matchId, LINKED)) {
-    const tx = historyEntryToTx(entry);
-    if (tx) indexed.push(tx);
-  }
+  const entries = historyFor(matchId, LINKED);
+  const indexed = entriesToTxs(entries);
+  const stale: HistoryEntry[] = staleEntries(entries);
 
   const base: ScanOutcome = {
     txs: indexed,
@@ -380,10 +444,19 @@ export async function scanMatchTransactions(
     blocksScanned: 0,
     exhausted: false,
     degraded: null,
+    source,
     snapshotBlock: SNAPSHOT_BLOCK,
+    snapshotAt: SNAPSHOT_AT,
     tailCapped: false,
     indexResolved: indexAnswersMatch(required, indexed),
   };
+
+  /*
+   * A network whose index is the whole answer has no live half to consult, so
+   * what the file holds is the result. Incompleteness is reported rather than
+   * chased: there is nowhere to chase it to.
+   */
+  if (source === "committed") return { ...base, exhausted: !base.indexResolved };
 
   /*
    * Nothing to ask the chain for.
@@ -401,6 +474,64 @@ export async function scanMatchTransactions(
    */
   if (base.indexResolved && stale.length === 0) return base;
 
+  if (source === "rpc-index") return scanFromRpcIndex(matchId, required, base, indexed);
+
+  return scanFromLog(matchId, required, base, indexed, stale, opts);
+}
+
+/**
+ * The live half on a network whose node lists a contract's transactions.
+ *
+ * One request, no windowing, no budget to run out of, so most of the machinery
+ * below does not apply: there is no tail to cap and no progress to report. The
+ * merge is the same one the window walk uses, and the listing wins a collision
+ * for the same reason the live tail does, its status is by definition not older
+ * than the file's.
+ *
+ * A failed request degrades to the committed index rather than to nothing. The
+ * hashes in the file were real when it was written and still open on the
+ * explorer, so showing them is better than showing a reader an error about a
+ * network that is only unreachable this second.
+ */
+async function scanFromRpcIndex(
+  matchId: bigint,
+  required: LinkedMethod[],
+  base: ScanOutcome,
+  indexed: MatchTx[],
+): Promise<ScanOutcome> {
+  let listed: HistoryEntry[];
+  try {
+    listed = await fetchContractTransactions();
+  } catch (err) {
+    return { ...base, degraded: readableFailure(err), exhausted: !base.indexResolved };
+  }
+
+  const wanted = String(matchId);
+  // Newest first before the merge, so that where a match has more than one
+  // attempt at a method the newest is the one kept, exactly as the backwards
+  // window walk arranges on Bradbury.
+  const live = entriesToTxs(listed.filter((e) => e.matchId === wanted)).sort(newestFirst);
+
+  const txs = mergeMatchTxs(live, indexed);
+  const complete = required.every((m) => txs.some((t) => t.method === m));
+  return { ...base, txs, exhausted: !complete };
+}
+
+/**
+ * The live half on a network that announces calls as consensus log events.
+ *
+ * Walks back from the chain tip until every required method has been found.
+ * Reads newest first so that a live match, whose interesting transactions are
+ * near the tip, resolves in one or two windows.
+ */
+async function scanFromLog(
+  matchId: bigint,
+  required: LinkedMethod[],
+  base: ScanOutcome,
+  indexed: MatchTx[],
+  stale: HistoryEntry[],
+  opts: ScanOptions,
+): Promise<ScanOutcome> {
   const event = newTransactionEvent();
   const consensus = CHAIN.consensusMainContract?.address as `0x${string}` | undefined;
   if (!event || !consensus) {
@@ -440,7 +571,10 @@ export async function scanMatchTransactions(
     ? indexed.map((tx) => ({ ...tx, status: refreshed.get(tx.txId) ?? tx.status }))
     : indexed;
 
-  const { windows: tail, capped } = tailWindows(latest, SNAPSHOT_BLOCK, MAX_WINDOWS);
+  // Zero where no index matched this contract, which asks the walk to cover as
+  // much of the history as its budget reaches rather than trusting a file about
+  // another deployment. It reports tailCapped either way.
+  const { windows: tail, capped } = tailWindows(latest, SNAPSHOT_BLOCK ?? 0, MAX_WINDOWS);
 
   // Decided once, from the index alone. A match the index already answers is
   // complete whatever the tail did, so the cap below must not touch it.
@@ -467,7 +601,9 @@ export async function scanMatchTransactions(
       blocksScanned: tail.slice(0, scanned).reduce((n, w) => n + Number(w.to - w.from) + 1, 0),
       exhausted: !complete,
       degraded: degraded ?? (capped && !complete ? CAPPED_GAP : null),
+      source: base.source,
       snapshotBlock: SNAPSHOT_BLOCK,
+      snapshotAt: SNAPSHOT_AT,
       tailCapped: capped,
       indexResolved,
     };
@@ -552,6 +688,9 @@ export async function scanMatchTransactions(
           method: method as LinkedMethod,
           txId: entry.txId,
           block: entry.block,
+          // This source reports blocks and not times, so there is no timestamp
+          // to carry. Ordering on this network goes through the block.
+          at: null,
           status: entry.status,
         });
         stillNeeded.delete(method);
@@ -594,7 +733,7 @@ function readableFailure(err: unknown): string {
  * node was busy, the next visit must be free to try again rather than inherit
  * a permanent gap.
  */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const CACHE_PREFIX = "carnage.txlog";
 
 type CacheRecord = {

@@ -557,13 +557,36 @@ export function stakeSpread(matches: MatchState[]): StakeSpread | null {
 /** One adjudicate transaction, reduced to what the chart needs. */
 export type Attempt = {
   txId: string;
-  block: number;
+  /**
+   * Block the transaction landed in, or null on a network that numbers none.
+   * Null on every Studio Next attempt, where `at` is what orders and what the
+   * claims table prints instead.
+   */
+  block: number | null;
+  /**
+   * When the node recorded it, ISO 8601 to the second, or null where the
+   * source reports none. Null on every Bradbury attempt, whose source is a log
+   * filter that reports blocks and not times.
+   */
+  at: string | null;
   statusName: string;
   resultName: string;
   rounds: number;
   /** Consensus accepted the execution, so its verdict was written. */
   applied: boolean;
 };
+
+/**
+ * Oldest first, in whichever order the network actually has.
+ *
+ * Blocks where there are blocks, time where there is not. The two are never
+ * compared against each other: one feed reads one deployment, and every
+ * attempt in it reports the same one of the two.
+ */
+export function oldestFirst(a: Attempt, b: Attempt): number {
+  if (a.block !== null && b.block !== null) return a.block - b.block;
+  return Date.parse(a.at ?? "") - Date.parse(b.at ?? "");
+}
 
 export type MatchConvergence = {
   matchId: bigint;
@@ -580,7 +603,21 @@ export type MatchConvergence = {
   hasVerdict: boolean;
 };
 
-const APPLIED_RESULTS = new Set(["AGREE", "MAJORITY_AGREE"]);
+/**
+ * The words the two networks use for "consensus took this execution".
+ *
+ * AGREE and MAJORITY_AGREE are Bradbury's, read from the transaction's
+ * resultName. ACCEPTED is Studio Next's, read from its consensus decision.
+ * They are listed side by side rather than translated into one another,
+ * because a committed index that rewrote one chain's vocabulary into the
+ * other's would assert something the node never said.
+ *
+ * Studio Next reports the consensus decision and the execution outcome
+ * separately, and an adjudicate call that reverted wrote no labels however
+ * consensus voted. chain/txindex.ts folds that into the single word ERRORED,
+ * which is absent here on purpose: it is a decision, and it is not this one.
+ */
+const APPLIED_RESULTS = new Set(["AGREE", "MAJORITY_AGREE", "ACCEPTED"]);
 
 export function isApplied(statusName: string, resultName: string): boolean {
   if (statusName === "CANCELED") return false;

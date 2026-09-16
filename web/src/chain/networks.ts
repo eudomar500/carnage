@@ -14,20 +14,49 @@ import { studioDevnet } from "genlayer-js-next/chains";
  * The capability flags are the important part. They are not preferences; each
  * one records something measured against the live network:
  *
- *   hasTxLog     eth_getLogs returns transactions for the consensus contract.
- *                False on Studio Next, where it answers [] for every range,
+ *   txIndexSource
+ *                where this network's transaction hashes come from live, which
+ *                is what decides whether a verdict on it can carry a proof
+ *                link. It replaces hasTxLog, which was a boolean asking the
+ *                wrong question: "does eth_getLogs work" rather than "can we
+ *                attach a hash". Studio Next answered false to the first and,
+ *                as it turns out, yes to the second.
+ *
+ *                "log" on Bradbury, where every call to an intelligent
+ *                contract is announced by the consensus contract as
+ *                NewTransaction(txId, recipient, activator) with recipient
+ *                indexed, so filtering that event enumerates the contract's
+ *                whole history. chain/txlog.ts walks it.
+ *
+ *                "rpc-index" on Studio Next, whose node answers
+ *                sim_getTransactionsForAddress with every transaction ever
+ *                sent to a contract, in one response, each carrying its
+ *                calldata, status, consensus decision and rotation count.
+ *                chain/txindex.ts reads it. This was recorded as
+ *                hasTxLog: false, which was true of eth_getLogs and wrong
+ *                about the network: it does answer [] for every range,
  *                including the full chain with no address filter, because
- *                there is no EVM underneath it. Everything built on the
- *                transaction log -- proof links, the convergence chart, the
- *                round drill -- has no data source there at all, so those
- *                features are switched off rather than left to render an empty
- *                result that reads like a bug.
+ *                there is no EVM underneath it, but the transactions were
+ *                never unreachable. They were one method away.
+ *
+ *                "committed" for a network whose index is the whole answer,
+ *                with nothing live to read. No row carries it today. It is
+ *                declared because it is the third state this app can actually
+ *                be in, and because it is what either network degrades to when
+ *                its live source cannot be reached.
+ *
+ *                Measured on 2026-09-16: the listing call sits in the node's
+ *                `read` rate-limit bucket, 300 requests a minute, not the
+ *                `standard` bucket that meters contract reads at 30. So it
+ *                does not compete with anything readsPerMinute below paces.
  *
  *   hasIndex     a committed transaction index exists for this contract.
- *                web/src/chain/history.json was generated against Bradbury and
- *                is keyed to its contract address. It is meaningless anywhere
- *                else, and history.ts already refuses an index built for a
- *                different address, so this only stops us asking.
+ *                True on both networks now. src/chain/history.json was built
+ *                against Bradbury and src/chain/history-studio-next.json
+ *                against Studio Next; each is keyed to its own contract
+ *                address and history.ts picks between them by address, so an
+ *                index can never be read against the deployment it does not
+ *                describe.
  *
  *   withdrawals  the network executes outbound value transfers. False on
  *                Studio Next: emit_transfer finalizes there with the right
@@ -119,8 +148,14 @@ export type NetworkId = "bradbury" | "studio-next";
 /** Where a failed read puts the contract's revert bytes. Never "nowhere". */
 export type RevertBytesLocation = "return-data" | "receipt";
 
+/**
+ * Where live transaction hashes come from on a network. See the capability
+ * note above; the committed index is a separate axis, carried by hasIndex.
+ */
+export type TxIndexSource = "log" | "rpc-index" | "committed";
+
 export type Capabilities = {
-  hasTxLog: boolean;
+  txIndexSource: TxIndexSource;
   hasIndex: boolean;
   withdrawals: boolean;
   readRevertBytes: RevertBytesLocation;
@@ -200,7 +235,7 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
       note: "Bradbury GEN comes from the testnet faucet.",
     },
     capabilities: {
-      hasTxLog: true,
+      txIndexSource: "log",
       hasIndex: true,
       withdrawals: true,
       readRevertBytes: "return-data",
@@ -236,8 +271,8 @@ export const NETWORKS: Record<NetworkId, NetworkDef> = {
         "fund your address from the Studio wallet panel.",
     },
     capabilities: {
-      hasTxLog: false,
-      hasIndex: false,
+      txIndexSource: "rpc-index",
+      hasIndex: true,
       withdrawals: false,
       readRevertBytes: "receipt",
       readsPerMinute: 30,

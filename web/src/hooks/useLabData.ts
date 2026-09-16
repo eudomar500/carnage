@@ -9,10 +9,12 @@ import {
   pool,
   tailWindows,
 } from "../chain/txlog";
-import { historyByMethod, SNAPSHOT_BLOCK } from "../chain/history";
+import { historyByMethod, orderOf, SNAPSHOT_AT, SNAPSHOT_BLOCK } from "../chain/history";
+import { fetchContractTransactions } from "../chain/txindex";
 import {
   convergenceOf,
   isApplied,
+  oldestFirst,
   type Attempt,
   type MatchConvergence,
 } from "../chain/labs";
@@ -154,8 +156,10 @@ export type AdjudicationFeed = {
   degraded: string | null;
   /** True once the walk has finished, cleanly or not. */
   done: boolean;
-  /** The block the committed index answers through. */
-  snapshotBlock: number;
+  /** The block the committed index answers through, or null where none does. */
+  snapshotBlock: number | null;
+  /** The day the committed index was taken, or null where it records none. */
+  snapshotAt: string | null;
   /** True when the live tail was wider than the budget could cover. */
   tailCapped: boolean;
 };
@@ -169,6 +173,7 @@ const EMPTY_FEED: AdjudicationFeed = {
   degraded: null,
   done: false,
   snapshotBlock: SNAPSHOT_BLOCK,
+  snapshotAt: SNAPSHOT_AT,
   tailCapped: false,
 };
 
@@ -187,6 +192,7 @@ export function indexedAttempts(): Map<string, Attempt[]> {
     list.push({
       txId: e.hash,
       block: e.block,
+      at: e.at ?? null,
       statusName: e.status,
       resultName: e.result,
       rounds: e.rounds,
@@ -204,7 +210,7 @@ function appliedAttempt(attempts: Attempt[]): Attempt | undefined {
 
 function feedFrom(found: Map<string, Attempt[]>): Pick<AdjudicationFeed, "byMatch" | "verdicts"> {
   const byMatch = [...found.entries()]
-    .map(([id, attempts]) => convergenceOf(BigInt(id), [...attempts].sort((a, b) => a.block - b.block)))
+    .map(([id, attempts]) => convergenceOf(BigInt(id), [...attempts].sort(oldestFirst)))
     .sort((a, b) => Number(a.matchId - b.matchId));
 
   const verdicts = new Map<string, Attempt>();
@@ -233,23 +239,57 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
     run.current = mine;
 
     void (async () => {
-      // A network with no transaction log has nothing for this tier to read.
-      // Checked before the chain definition, because Studio Next does publish
-      // a consensus address and an ABI; what it does not do is answer
-      // eth_getLogs, so the walk below would spend every window to return
-      // nothing and report it as a degraded scan rather than as absent.
-      if (!capabilities().hasTxLog) {
-        setFeed({
-          ...EMPTY_FEED,
-          // Explicitly not SNAPSHOT_BLOCK. The committed index is Bradbury's,
-          // so its snapshot block is not a fact about this network, and it
-          // must not reach a rendered sentence here. Zero reads as "no index",
-          // which is the truth; callers gate on the capability rather than on
-          // this number, so nothing compares against it.
-          snapshotBlock: 0,
-          degraded: null,
-          done: true,
-        });
+      const source = capabilities().txIndexSource;
+      const indexed = indexedAttempts();
+
+      // A network whose index is the whole answer has no live half to consult.
+      // The file is the result, and it is already loaded.
+      if (source === "committed") {
+        setFeed({ ...EMPTY_FEED, ...feedFrom(indexed), done: true });
+        return;
+      }
+
+      // A network whose node lists a contract's transactions answers this tier
+      // in one request. No windowing, no budget, nothing to cap: the listing is
+      // the whole history, so it is merged over the index and the walk below is
+      // never reached. See chain/txindex.ts.
+      if (source === "rpc-index") {
+        try {
+          const listed = await fetchContractTransactions();
+          if (mine.cancelled) return;
+          for (const e of listed) {
+            if (e.method !== "adjudicate" || !e.matchId) continue;
+            const list = indexed.get(e.matchId) ?? [];
+            // The listing and the committed index overlap by design: the file
+            // is a snapshot of this same listing. Keeping both copies of one
+            // transaction would count a single attempt twice and turn a clean
+            // match into a fought one.
+            if (list.some((a) => a.txId === e.hash)) continue;
+            list.push({
+              txId: e.hash,
+              block: e.block,
+              at: e.at ?? null,
+              statusName: e.status,
+              resultName: e.result,
+              rounds: e.rounds,
+              applied: isApplied(e.status, e.result),
+            });
+            indexed.set(e.matchId, list);
+          }
+          setFeed({ ...EMPTY_FEED, ...feedFrom(indexed), done: true });
+        } catch {
+          if (mine.cancelled) return;
+          // The committed index still stands on its own. Its hashes were real
+          // when the file was written and still open on the explorer, so they
+          // are shown rather than withheld over one unreachable request.
+          setFeed({
+            ...EMPTY_FEED,
+            ...feedFrom(indexed),
+            degraded:
+              "could not reach the node's transaction index, showing the committed index only",
+            done: true,
+          });
+        }
         return;
       }
 
@@ -265,7 +305,7 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
       }
 
       const client = readClient() as any;
-      const found = indexedAttempts();
+      const found = indexed;
       let degraded: string | null = null;
 
       let tail: { from: bigint; to: bigint }[] = [];
@@ -296,6 +336,9 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
             attempt: {
               txId,
               block: Number(log.blockNumber ?? 0),
+              // This source reports blocks and not times. Ordering on this
+              // network goes through the block.
+              at: null,
               statusName,
               resultName,
               rounds: Number(tx?.numOfRounds ?? 0),
@@ -307,7 +350,7 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
 
       try {
         const latest: bigint = await retryRead(() => client.getBlockNumber());
-        const planned = tailWindows(latest, SNAPSHOT_BLOCK, SCAN_WINDOWS);
+        const planned = tailWindows(latest, SNAPSHOT_BLOCK ?? 0, SCAN_WINDOWS);
         tail = planned.windows;
         capped = planned.capped;
       } catch {
@@ -365,6 +408,7 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
             degraded,
             done: true,
             snapshotBlock: SNAPSHOT_BLOCK,
+            snapshotAt: SNAPSHOT_AT,
             tailCapped: capped,
           });
           return;
@@ -379,6 +423,7 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
           degraded,
           done: false,
           snapshotBlock: SNAPSHOT_BLOCK,
+          snapshotAt: SNAPSHOT_AT,
           tailCapped: capped,
         });
       }
@@ -392,6 +437,7 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
         degraded,
         done: true,
         snapshotBlock: SNAPSHOT_BLOCK,
+        snapshotAt: SNAPSHOT_AT,
         tailCapped: capped,
       });
     })();
@@ -402,28 +448,36 @@ export function useAdjudications(enabled: boolean): AdjudicationFeed {
   }, [enabled]);
 
   // Null means the walk has not published anything yet. The index is already
-  // known at that point, so it is shown immediately and only the tail is
+  // known at that point, so it is shown immediately and only the live half is
   // reported as pending. Derived here rather than written from the effect,
   // which would cost a render that only says "working".
-  // The committed index is Bradbury's, keyed to its contract. On any other
-  // network it describes a different deployment, so it is not merged in as a
-  // head start; the feed there is simply empty and the page says why.
-  if (!capabilities().hasIndex) return feed ?? { ...EMPTY_FEED, snapshotBlock: 0, done: true };
+  //
+  // No capability check. There is one committed index per deployment and
+  // history.ts picks it by contract address, so what indexedAttempts() returns
+  // is always about the contract being read, and is empty when no file
+  // describes it. Gating on hasIndex here would only repeat that.
   return feed ?? { ...EMPTY_FEED, ...feedFrom(indexedAttempts()), scanning: enabled };
 }
 
 /* ---------- corpus date --------------------------------------------------- */
 
-/** The settlement the committed index saw last, by block. */
-export function latestSettlement(): { hash: string; block: number } | null {
-  let best: { hash: string; block: number } | null = null;
+/**
+ * The settlement the committed index saw last.
+ *
+ * `at` is present where the source records a time and null where it records
+ * only a block, which is the same split HistoryEntry carries. Where it is
+ * present the corpus date costs no read at all.
+ */
+export function latestSettlement(): { hash: string; block: number | null; at: string | null } | null {
+  let best: { hash: string; block: number | null; at: string | null } | null = null;
   for (const e of historyByMethod("settle")) {
-    if (!best || e.block > best.block) best = { hash: e.hash, block: e.block };
+    const entry = { hash: e.hash, block: e.block, at: e.at ?? null };
+    if (!best || orderOf(e) > orderOf(best)) best = entry;
   }
   return best;
 }
 
-export type CorpusDate = { block: number; day: string | null };
+export type CorpusDate = { block: number | null; day: string | null };
 
 const DATE_KEY = (hash: string) => `carnage:settled:${hash}`;
 
@@ -449,17 +503,20 @@ function cachedDay(hash: string | undefined): string | null {
  * until the index is regenerated.
  */
 export function useSettlementDate(): CorpusDate | null {
-  // Gated rather than left to degrade. The committed index empties itself when
-  // it does not match the contract, so this would return null on another
-  // network anyway; asking is still a read of a constant that describes a
-  // different deployment, and not asking is what makes that statement simple.
-  // Computed here, not in an early return: the hooks below must run either way.
-  const latest = capabilities().hasIndex ? latestSettlement() : null;
+  // No capability check. history.ts picks the index by contract address, so
+  // this is empty rather than wrong when no committed file describes the
+  // contract being read. Computed here, not in an early return: the hooks
+  // below must run either way.
+  const latest = latestSettlement();
+  // The day the index already carries, where its source recorded one. Studio
+  // Next's listing reports created_at per transaction, so its corpus date is
+  // in the committed file and the read below never runs there.
+  const known = latest?.at ? latest.at.slice(0, 10) : null;
   const hash = latest?.hash;
-  const [day, setDay] = useState<string | null>(() => cachedDay(hash));
+  const [day, setDay] = useState<string | null>(() => known ?? cachedDay(hash));
 
   useEffect(() => {
-    if (!hash || day) return;
+    if (known || !hash || day) return;
     const mine = { cancelled: false };
     void (async () => {
       try {
@@ -480,9 +537,9 @@ export function useSettlementDate(): CorpusDate | null {
     return () => {
       mine.cancelled = true;
     };
-  }, [hash, day]);
+  }, [hash, day, known]);
 
-  return latest ? { block: latest.block, day } : null;
+  return latest ? { block: latest.block, day: known ?? day } : null;
 }
 
 /* ---------- per round drill-down ----------------------------------------- */

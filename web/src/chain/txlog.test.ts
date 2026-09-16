@@ -16,6 +16,10 @@ const rpc = vi.hoisted(() => {
 
 vi.mock("./client", () => ({
   CARNAGE_ADDRESS: "0xc60850c93d9AaB0e8C6c678B14b0B8db2d24337A",
+  // The scan dispatches on this before it touches the chain. Bradbury's value,
+  // because this file mocks Bradbury's consensus contract and its log.
+  capabilities: () => ({ txIndexSource: "log" }),
+  activeNetwork: () => ({ rpcUrl: "https://rpc-bradbury.genlayer.com" }),
   CHAIN: {
     consensusMainContract: {
       address: "0xb7278A61aa25c888815aFC32Ad3cC52fF24fE575",

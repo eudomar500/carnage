@@ -8,7 +8,9 @@ import {
   type MatchTx,
   type ScanOutcome,
 } from "../chain/txlog";
-import { SNAPSHOT_BLOCK } from "../chain/history";
+import { SNAPSHOT_AT, SNAPSHOT_BLOCK } from "../chain/history";
+import { capabilities } from "../chain/client";
+import type { TxIndexSource } from "../chain/networks";
 
 export type TxLookup =
   /** Not asked for yet. The scan costs RPC, so it waits to be needed. */
@@ -25,8 +27,12 @@ export type TxLookup =
       blocksScanned: number;
       /** Live-tail windows read after the snapshot. */
       windowsScanned: number;
-      /** The block the committed index answers through. */
-      snapshotBlock: number;
+      /** Where the live half of this answer came from. */
+      source: TxIndexSource;
+      /** The block the committed index answers through, or null where none does. */
+      snapshotBlock: number | null;
+      /** The day the committed index was taken, or null where it records none. */
+      snapshotAt: string | null;
       /** True when the live tail was wider than the budget could cover. */
       tailCapped: boolean;
       /** The committed index alone answered every required method. */
@@ -106,7 +112,9 @@ export function useMatchTransactions(
             blocksScanned: 0,
             exhausted: true,
             degraded: String((err as any)?.message ?? err).replace(/\s+/g, " ").slice(0, 140),
+            source: capabilities().txIndexSource,
             snapshotBlock: SNAPSHOT_BLOCK,
+            snapshotAt: SNAPSHOT_AT,
             tailCapped: false,
             indexResolved: false,
           },
@@ -134,7 +142,9 @@ export function useMatchTransactions(
       degraded: null,
       blocksScanned: 0,
       windowsScanned: 0,
+      source: capabilities().txIndexSource,
       snapshotBlock: SNAPSHOT_BLOCK,
+      snapshotAt: SNAPSHOT_AT,
       tailCapped: false,
       indexResolved: true,
     };
@@ -149,7 +159,9 @@ export function useMatchTransactions(
       degraded: o.degraded,
       blocksScanned: o.blocksScanned,
       windowsScanned: o.windowsScanned,
+      source: o.source,
       snapshotBlock: o.snapshotBlock,
+      snapshotAt: o.snapshotAt,
       tailCapped: o.tailCapped,
       indexResolved: o.indexResolved,
     };

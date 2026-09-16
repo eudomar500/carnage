@@ -20,15 +20,16 @@ import {
   staleEntries,
 } from "./history";
 import { indexedAttempts } from "../hooks/useLabData";
-import { convergenceOf, convergenceSummary } from "./labs";
+import { convergenceOf, convergenceSummary, oldestFirst } from "./labs";
 import type { HistoryEntry } from "./history";
 
 const tx = (method: string, txId: string, block: string, status = "FINALIZED"): MatchTx =>
-  ({ method, txId, block, status }) as MatchTx;
+  ({ method, txId, block, at: null, status }) as MatchTx;
 
 const entry = (over: Partial<HistoryEntry>): HistoryEntry => ({
   hash: "0xaa" as `0x${string}`,
   block: 1,
+  at: null,
   method: "adjudicate",
   matchId: "1",
   sender: "0xf0",
@@ -42,14 +43,18 @@ const entry = (over: Partial<HistoryEntry>): HistoryEntry => ({
 
 describe("the committed index", () => {
   it("covers the contract from its deploy block", () => {
-    expect(DEPLOY_BLOCK).toBe(HISTORY.deployBlock);
-    expect(SNAPSHOT_BLOCK).toBeGreaterThan(DEPLOY_BLOCK);
-    expect(HISTORY.transactions.every((e) => e.block >= DEPLOY_BLOCK)).toBe(true);
-    expect(HISTORY.transactions.every((e) => e.block <= SNAPSHOT_BLOCK)).toBe(true);
+    // These tests run under the default network, which is Bradbury, so the
+    // index that loaded is the one that numbers blocks.
+    const deploy = DEPLOY_BLOCK as number;
+    const snapshot = SNAPSHOT_BLOCK as number;
+    expect(deploy).toBe(HISTORY.deployBlock);
+    expect(snapshot).toBeGreaterThan(deploy);
+    expect(HISTORY.transactions.every((e) => (e.block as number) >= deploy)).toBe(true);
+    expect(HISTORY.transactions.every((e) => (e.block as number) <= snapshot)).toBe(true);
   });
 
   it("is sorted by block, so a regenerated file stays comparable", () => {
-    const blocks = HISTORY.transactions.map((e) => e.block);
+    const blocks = HISTORY.transactions.map((e) => e.block as number);
     expect([...blocks].sort((a, b) => a - b)).toEqual(blocks);
   });
 
@@ -92,6 +97,19 @@ describe("index entries become transactions", () => {
       method: "settle",
       txId: "0xaa",
       block: "7",
+      at: null,
+      status: "FINALIZED",
+    });
+  });
+
+  it("carries the time instead of the block where the network has no blocks", () => {
+    expect(
+      historyEntryToTx(entry({ method: "settle", block: null, at: "2026-09-15T15:09:48Z" })),
+    ).toEqual({
+      method: "settle",
+      txId: "0xaa",
+      block: null,
+      at: "2026-09-15T15:09:48Z",
       status: "FINALIZED",
     });
   });
@@ -197,7 +215,7 @@ describe("planning the live tail", () => {
 describe("convergence figures from the index alone", () => {
   it("matches what a full live scan produced before the index existed", () => {
     const rows = [...indexedAttempts().entries()]
-      .map(([id, a]) => convergenceOf(BigInt(id), [...a].sort((x, y) => x.block - y.block)))
+      .map(([id, a]) => convergenceOf(BigInt(id), [...a].sort(oldestFirst)))
       .sort((a, b) => Number(a.matchId - b.matchId));
     // Verified against a full backwards walk of the consensus log: eleven
     // adjudicate transactions across nine matches, all nine carrying a
@@ -239,7 +257,9 @@ const outcome = (over: Partial<ScanOutcome>): ScanOutcome => ({
   blocksScanned: 400000,
   exhausted: false,
   degraded: null,
+  source: "log",
   snapshotBlock: SNAPSHOT_BLOCK,
+  snapshotAt: null,
   tailCapped: true,
   indexResolved: true,
   ...over,

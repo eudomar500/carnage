@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "snapshot": "node scripts/snapshot.mjs"
+    "snapshot": "node scripts/snapshot.mjs",
+    "snapshot:studio-next": "node scripts/snapshot-studio-next.mjs"
   },
   "dependencies": {
     "genlayer-js": "^1.2.0",

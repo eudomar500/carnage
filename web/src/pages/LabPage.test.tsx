@@ -13,8 +13,15 @@ import type { NavShell } from "../components/TopNav";
  * not: they described Bradbury's record and were printed over whatever the
  * active contract held. Two of them contrasted a pair of numbers that are the
  * same on a corpus where no sentence repeats, which reads as nonsense ("closer
- * to 4 trials than 4"); one counted transactions on a network that keeps no
- * transaction log; one promised a hash on every row where there are none.
+ * to 4 trials than 4").
+ *
+ * Two more said Studio Next keeps no transaction log, so no verdict there
+ * could carry a hash. That was measured against eth_getLogs and was never true
+ * of the network: its node lists a contract's whole history through
+ * sim_getTransactionsForAddress. The assertions that pinned the old sentences
+ * are inverted below rather than deleted, because the page must now be held to
+ * the opposite claim: that it does show the transaction, and that it describes
+ * the right source while doing it.
  *
  * Rendered to static markup with react-dom/server, the idiom this repo already
  * uses in components/TopNav.test.tsx, so no DOM library is needed. The data
@@ -98,6 +105,8 @@ const DISTINCT: MatchState[] = [
 ];
 
 let corpus: MatchState[] = [];
+/** Which network the render under test is for. Read by the useLabData stub. */
+let onBradbury = true;
 
 vi.mock("../hooks/useLabData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useLabData")>();
@@ -111,6 +120,10 @@ vi.mock("../hooks/useLabData", async (importOriginal) => {
       found: corpus.length,
       error: null,
     }),
+    // Each network reports the reach of its own index, and they do not report
+    // it in the same units: Bradbury has blocks and no dates, Studio Next dates
+    // and no blocks. The stub follows the network under test, because the
+    // sentences being asserted below are built from exactly this.
     useAdjudications: () => ({
       byMatch: [],
       verdicts: new Map(),
@@ -119,7 +132,8 @@ vi.mock("../hooks/useLabData", async (importOriginal) => {
       total: 0,
       degraded: null,
       done: true,
-      snapshotBlock: 21_640_248,
+      snapshotBlock: onBradbury ? 21_640_248 : null,
+      snapshotAt: onBradbury ? null : "2026-09-16",
       tailCapped: false,
     }),
     useSettlementDate: () => null,
@@ -138,6 +152,7 @@ const shell: NavShell = {
 /** The page as it renders on one network, tags stripped down to its words. */
 async function text(id: NetworkId, matches: MatchState[]): Promise<string> {
   corpus = matches;
+  onBradbury = id === "bradbury";
   const { default: LabPage } = await import("./LabPage");
   const network = NETWORKS[id];
   const markup = renderToStaticMarkup(
@@ -197,13 +212,26 @@ describe("the lab on a network with a transaction log", () => {
   });
 });
 
-describe("the lab on a network without one", () => {
-  it("drops the convergence line from the results rather than printing zeros", async () => {
+describe("the lab on a network whose node lists the contract's transactions", () => {
+  it("counts adjudicate transactions here too, rather than saying it cannot", async () => {
     const page = await text("studio-next", DISTINCT);
-    expect(page).not.toContain("adjudicate transactions,");
-    expect(page).not.toContain("0 verdicts written");
-    // The section that owns the measurement still says where it is measured.
-    expect(page).toContain("Convergence is measured on BRADBURY only");
+    expect(page).toContain("adjudicate transactions,");
+    // The sentence that used to send the reader to another network for this
+    // measurement. Convergence is measured here now.
+    expect(page).not.toContain("Convergence is measured on BRADBURY only");
+    expect(page).not.toContain("exposes no transaction log");
+  });
+
+  it("names its own live source rather than the consensus log it does not have", async () => {
+    const page = await text("studio-next", DISTINCT);
+    expect(page).toContain("the node's own transaction index");
+    expect(page).not.toContain("the consensus contract's transaction log");
+  });
+
+  it("quotes the reach of its index as a date, never as another chain's block", async () => {
+    const page = await text("studio-next", DISTINCT);
+    expect(page).toContain("Every transaction through 2026-09-16 is in an index");
+    expect(page).not.toContain("block 21,640,248");
   });
 
   it("states the equal case instead of contrasting a number with itself", async () => {
@@ -231,12 +259,22 @@ describe("the lab on a network without one", () => {
     expect(page).not.toContain("The agreement figure rests on 4 sentences, not 4");
   });
 
-  it("does not promise transactions it cannot show, or quote another network's claims", async () => {
+  it("promises the transaction it can now show, and still quotes no other network's claims", async () => {
     const page = await text("studio-next", DISTINCT);
-    expect(page).not.toContain("each with the transaction that wrote its verdict");
-    expect(page).not.toContain("Follow any hash to the explorer");
+    expect(page).toContain("each with the transaction that wrote its verdict");
+    expect(page).toContain("Follow any hash to the explorer");
+    // The case studies are pinned by id and still do not travel: an id names a
+    // different match on a different deployment, whatever the source can reach.
     expect(page).not.toContain("I didn't drop to 650 because they pushed me");
     // The sentence the two examples were attached to is true everywhere.
     expect(page).toContain("A claim is scored only when a number appears inside a phrase");
+  });
+
+  it("says a missing verdict was looked for in both of this network's sources", async () => {
+    const page = await text("studio-next", DISTINCT);
+    expect(page).toContain(
+      "no adjudicate transaction found for this match, in the committed index through " +
+        "2026-09-16 or in the node's own transaction index read on this visit",
+    );
   });
 });

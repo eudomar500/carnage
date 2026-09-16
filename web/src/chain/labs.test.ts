@@ -703,7 +703,7 @@ describe("stake across the record", () => {
 
 describe("convergence per match", () => {
   const attempt = (over: Partial<Attempt>): Attempt => ({
-    txId: "0xabc", block: 1, statusName: "FINALIZED", resultName: "AGREE",
+    txId: "0xabc", block: 1, at: null, statusName: "FINALIZED", resultName: "AGREE",
     rounds: 0, applied: true, ...over,
   });
 

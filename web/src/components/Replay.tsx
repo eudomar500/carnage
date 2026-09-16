@@ -5,6 +5,7 @@ import { settlementSplit } from "../chain/rubric";
 import { explorerTxUrl, requiredMethods, type LinkedMethod } from "../chain/txlog";
 import { useMatchTransactions, type TxLookup } from "../hooks/useMatchTransactions";
 import { useNetwork } from "../chain/network-store";
+import { missingNote as provenanceMissingNote } from "../chain/provenance";
 import { formatToken, shortAddress, TOKEN_SYMBOL } from "../lib/format";
 import { settlementCaption } from "../lib/settlement-copy";
 
@@ -377,13 +378,16 @@ function shortTx(txId: string): string {
  * Why a method has no link, in the reader's terms.
  *
  * Two sources answer this section and a reader cannot be expected to know
- * that, so the note names both rather than quoting a block count that means
- * nothing on its own. See chain/txlog.ts for why the split exists.
+ * that, so the note names both. The wording is not built here: it differs by
+ * network and chain/provenance.ts is the one place that knows how, which is
+ * what stops this quoting a block number on a chain that numbers none.
  */
 function missingNote(lookup: Extract<TxLookup, { state: "ready" }>): string {
-  if (lookup.degraded) return `not located (${lookup.degraded})`;
-  const through = lookup.snapshotBlock.toLocaleString("en-US");
-  return `not located in the committed index through block ${through}, nor in the ${lookup.windowsScanned} live windows after it`;
+  return provenanceMissingNote(
+    { source: lookup.source, snapshotBlock: lookup.snapshotBlock, snapshotAt: lookup.snapshotAt },
+    lookup.windowsScanned,
+    lookup.degraded,
+  );
 }
 
 /**
@@ -452,7 +456,7 @@ function ProofLinks({ methods, lookup }: { methods: LinkedMethod[]; lookup: TxLo
 }
 
 export default function Replay({ match }: { match: MatchState | null }) {
-  const { network, capabilities } = useNetwork();
+  const { capabilities } = useNetwork();
   const frames = match ? buildFrames(match, capabilities.withdrawals) : [];
   const [cursor, setCursor] = useState(0);
 
@@ -481,15 +485,14 @@ export default function Replay({ match }: { match: MatchState | null }) {
   // The frames themselves are built from get_match, and every figure in them
   // reads the same on every network; only the settlement caption differs,
   // because the unclaimed column it describes cannot drain where withdrawals
-  // do not execute. The verification strip under them needs a transaction log,
-  // so on a network without one the scan is never enabled: the lookup stays
-  // idle, ProofLinks renders nothing, and no request is made. The committed
-  // index and the tail scan are not consulted or disabled from here; they
-  // simply are not reached.
+  // do not execute. The verification strip under them needs transaction
+  // hashes, and every network Carnage runs on has a source for those, so the
+  // only gate left is whether the reader is on a frame whose evidence is a
+  // hash. Which source answers is txlog.ts's business, not this component's.
   const lookup = useMatchTransactions(
     match ? match.match_id : null,
     required,
-    capabilities.hasTxLog && Boolean(frames[at]?.proof),
+    Boolean(frames[at]?.proof),
   );
 
   if (!match) {
@@ -565,16 +568,7 @@ export default function Replay({ match }: { match: MatchState | null }) {
           </div>
           <p className="rep-caption">{frame.caption}</p>
           <div className="rep-body">{frame.body}</div>
-          {frame.proof ? (
-            capabilities.hasTxLog ? (
-              <ProofLinks methods={frame.proof} lookup={lookup} />
-            ) : (
-              <p className="proof proof-miss">
-                {network.label} exposes no transaction log, so this frame carries no
-                proof links. The record above is read from contract state.
-              </p>
-            )
-          ) : null}
+          {frame.proof ? <ProofLinks methods={frame.proof} lookup={lookup} /> : null}
           <div className="rep-nav">
             <button
               type="button"

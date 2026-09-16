@@ -9,6 +9,15 @@ import { CARNAGE_ADDRESS } from "../chain/client";
 import { useNetwork } from "../chain/network-store";
 import { NETWORKS } from "../chain/networks";
 import {
+  convergenceMethodNote,
+  convergenceReadsNote,
+  footerSourceNote,
+  liveSourceName,
+  missingVerdictNote,
+  sourcesNote,
+  type Provenance,
+} from "../chain/provenance";
+import {
   agreement,
   bandNote,
   claimRows,
@@ -34,11 +43,13 @@ import { useAdjudications, useLabMatches, useSettlementDate } from "../hooks/use
  * Two tiers, two sources. Everything derived from a match, which is every
  * claim, label, agreement and grading figure, is read from get_match on the
  * deployed contract when the page loads. Everything about how a verdict was
- * reached comes from the consensus contract's transaction log, served from a
- * committed index through its snapshot block and a live scan of the blocks
- * after it, because the contract cannot record how many attempts a verdict
- * took. No figure is typed in by hand. The corpus is small and says so, in the
- * places where a small corpus would otherwise flatter a number.
+ * reached comes from this network's transaction index, served from a committed
+ * index and a live read merged over it, because the contract cannot record how
+ * many attempts a verdict took. Which live read that is differs by network and
+ * is chain/provenance.ts's business, not this page's: every sentence about it
+ * here is built from the capability rather than typed out. No figure is typed
+ * in by hand. The corpus is small and says so, in the places where a small
+ * corpus would otherwise flatter a number.
  *
  * Nothing below the header renders until the match read finishes. A page of
  * zeros that turns into real numbers a few seconds later reads as broken, and
@@ -147,17 +158,20 @@ export default function LabPage({ nav }: { nav: NavShell }) {
   const gradingFooter = useMemo(() => crossTabFooter(rows), [rows]);
   const numbersJudgedOnTheirNumber = agree.verifiable > 0 && agree.agreed === agree.verifiable;
 
+  // What this page can say about where its hashes came from. Built from the
+  // capability and the index that actually loaded, so a sentence here can only
+  // describe the network being read: quoting one chain's block height against
+  // another chain's record is the mistake this replaces.
+  const provenance: Provenance = {
+    source: capabilities.txIndexSource,
+    snapshotBlock: adj.snapshotBlock,
+    snapshotAt: adj.snapshotAt,
+  };
+
   const lookup: VerdictLookup = {
     verdicts: adj.verdicts,
     scanning: adj.scanning || !adj.done,
-    // The note has to describe the network being read, not the one the
-    // committed index was built from. Quoting a snapshot block on a network
-    // with no transaction log would put a Bradbury block number against every
-    // row of another chain's claims, which is the one thing this page must
-    // never do.
-    missingNote: capabilities.hasTxLog
-      ? `no adjudicate transaction found for this match, in the committed index through block ${adj.snapshotBlock.toLocaleString("en-US")} or in the live blocks after it`
-      : `${network.label} exposes no transaction log, so no verdict here carries a transaction`,
+    missingNote: missingVerdictNote(provenance),
   };
 
   // Both case studies name a specific match id on the record network. An id is
@@ -220,22 +234,23 @@ export default function LabPage({ nav }: { nav: NavShell }) {
             independent validators on {network.name} labels each
             claim against the constraint that side revealed, and the labels move
             the stakes. This page is the record of what that jury returned. Match
-            data is read from the contract on every visit
-            {capabilities.hasTxLog ? (
-              <>
-                ; the transaction history behind each verdict comes from{" "}
-                <a className="lab-inline-link" href="#sources">
-                  two sources, both on-chain
-                </a>
-              </>
-            ) : null}
+            data is read from the contract on every visit; the transaction
+            history behind each verdict comes from{" "}
+            <a className="lab-inline-link" href="#sources">
+              two sources, both on-chain
+            </a>
             .
           </p>
+          {/* Convergence and the transaction links travel now: every network
+              has a source for them. The two matches read closely still do not,
+              because they are pinned by id and an id names a different match on
+              a different deployment. */}
           {!onRecordNetwork ? (
             <p className="lab-note">
-              Reading {network.name}. Convergence and the matches read closely below
-              are measured on {NETWORKS.bradbury.name} only, because this network
-              exposes no transaction log.
+              Reading {network.name}, with its own committed index and{" "}
+              {liveSourceName(capabilities.txIndexSource)} read live. The two matches
+              read closely further down are pinned to {NETWORKS.bradbury.name} by id
+              and are not shown here.
             </p>
           ) : null}
 
@@ -292,23 +307,26 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   scored claims agree with the evidence, from{" "}
                   <strong>{agree.distinctTexts}</strong> distinct sentences.
                 </li>
-                {/* Attempts are reconstructed from the consensus contract's
-                    transaction log. Without one there is nothing to count, and
-                    three zeros here would read as a measurement of a jury that
-                    never rotated rather than as a log this network does not
-                    keep. The section itself says so; this line just goes. */}
-                {capabilities.hasTxLog ? (
-                  <li>
-                    <strong>{convSummary.attempts}</strong> adjudicate transactions,{" "}
-                    <strong>{convSummary.withVerdict}</strong>{" "}
-                    {plural(convSummary.withVerdict, "verdict", "verdicts")} written,{" "}
-                    <strong>{convSummary.discarded}</strong> discarded.
-                  </li>
-                ) : null}
+                {/* Attempts are reconstructed from the network's transaction
+                    index, which every network now has. Printed unconditionally
+                    rather than gated: a zero here is a measurement, and it is
+                    the measurement the section below explains. */}
+                <li>
+                  <strong>{convSummary.attempts}</strong> adjudicate transactions,{" "}
+                  <strong>{convSummary.withVerdict}</strong>{" "}
+                  {plural(convSummary.withVerdict, "verdict", "verdicts")} written,{" "}
+                  <strong>{convSummary.discarded}</strong> discarded.
+                </li>
                 {corpusDate ? (
                   <li>
-                    Last match settled {corpusDate.day ?? "on an unread block"}, block{" "}
-                    {corpusDate.block.toLocaleString("en-US")}.
+                    Last match settled {corpusDate.day ?? "on an unread block"}
+                    {/* The block only where the network numbers blocks. Studio
+                        Next records the time instead, which is already the
+                        first half of this sentence. */}
+                    {corpusDate.block !== null
+                      ? `, block ${corpusDate.block.toLocaleString("en-US")}`
+                      : ""}
+                    .
                   </li>
                 ) : null}
               </ul>
@@ -363,10 +381,8 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 <li>
                   <strong>Convergence.</strong> get_match records that a match was
                   adjudicated, never how many attempts that took, because a
-                  discarded round writes nothing to contract state. Attempts are
-                  reconstructed from the consensus contract's transaction log,
-                  read from a committed index through its snapshot block and a
-                  live scan of the blocks after it.
+                  discarded round writes nothing to contract state.{" "}
+                  {convergenceMethodNote(capabilities.txIndexSource)}
                 </li>
               </ul>
             </section>
@@ -545,18 +561,12 @@ export default function LabPage({ nav }: { nav: NavShell }) {
               </section>
             ) : null}
 
-            {/* 8. Consensus. Needs the transaction log, which not every network
-                has; see the capability note in chain/networks.ts. */}
+            {/* 8. Consensus. Every network has a transaction index of some
+                kind; which one is the capability in chain/networks.ts, and the
+                sentences about it come from chain/provenance.ts. */}
             <section className="lab-section" id="sources">
               <Tag kind="live" />
               <h2 className="lab-h2">WHAT IT TOOK TO AGREE</h2>
-              {!capabilities.hasTxLog ? (
-                <p className="lab-body">
-                  Convergence is measured on {NETWORKS.bradbury.label} only, because
-                  this network exposes no transaction log.
-                </p>
-              ) : null}
-              {capabilities.hasTxLog ? (
               <p className="lab-body">
                 A verdict is a set of validators running the same job until
                 enough of them agree, and sometimes that takes more than one
@@ -566,12 +576,10 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 changed set of validators and running the job again. The contract
                 records only that a match was judged. It cannot record how many
                 attempts that took, because a thrown-away attempt leaves no trace
-                in contract state, so this section reads the consensus contract's
-                own transaction log instead.
+                in contract state, so {convergenceReadsNote(capabilities.txIndexSource)}.
               </p>
-              ) : null}
 
-              {capabilities.hasTxLog && adj.byMatch.length ? (
+              {adj.byMatch.length ? (
                 <>
                   <p className="lab-stat">
                     <strong>{convSummary.attempts}</strong> adjudicate transactions across{" "}
@@ -599,24 +607,19 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 </>
               ) : null}
 
-              {capabilities.hasTxLog && adj.scanning && adj.total > 0 ? (
+              {/* The window counter is the log walk's own progress and means
+                  nothing on a source that answers in one request, so it is
+                  printed only where there are windows to count. */}
+              {adj.scanning && adj.total > 0 ? (
                 <p className="lab-note">
                   Reading the blocks after the index, window {adj.progress} of{" "}
                   {adj.total}.
                 </p>
               ) : null}
               {adj.degraded ? <p className="act-warn">{adj.degraded}</p> : null}
-              {capabilities.hasTxLog && adj.done ? (
+              {adj.done ? (
                 <p className="lab-note">
-                  Two sources, both on-chain. Every transaction through block{" "}
-                  {adj.snapshotBlock.toLocaleString("en-US")} is in an index
-                  committed to this repository, which any reader can regenerate
-                  from the contract with the snapshot script. Blocks after it
-                  were scanned live on this visit
-                  {adj.total > 0
-                    ? `, ${adj.total} ${plural(adj.total, "window", "windows")} of them`
-                    : ""}
-                  .
+                  {sourcesNote(provenance, adj.total)}
                   {adj.tailCapped
                     ? " The chain has moved further than that scan reaches, so a match played since then would not appear here yet."
                     : ""}
@@ -743,19 +746,13 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                   a network without one keeps none of it. The rest of the
                   paragraph is true everywhere and stays. */}
               <p className="lab-body">
-                All {rows.length} of them, scored and unscored
-                {capabilities.hasTxLog ? ", each with the transaction that wrote its verdict" : ""}
-                . A scored claim shows what the evidence says and whether the
-                jury agreed. An unscored one shows why this page refused to score
-                it, so the claims kept out can be checked against the claims kept
-                in.
-                {capabilities.hasTxLog ? (
-                  <>
-                    {" "}
-                    Follow any hash to the explorer and you are looking at the
-                    same record this page is reading.
-                  </>
-                ) : null}
+                All {rows.length} of them, scored and unscored, each with the
+                transaction that wrote its verdict. A scored claim shows what the
+                evidence says and whether the jury agreed. An unscored one shows
+                why this page refused to score it, so the claims kept out can be
+                checked against the claims kept in. Follow any hash to the
+                explorer and you are looking at the same record this page is
+                reading.
               </p>
               <p className="lab-body">
                 A claim is scored only when a number appears inside a phrase that
@@ -829,11 +826,11 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                 </li>
                 {!onRecordNetwork ? (
                   <li>
-                    Every figure above is measured on {network.name}. Convergence,
-                    the transaction links and the two matches read closely are
-                    pinned to {NETWORKS.bradbury.name} and are not shown here,
-                    because this network exposes no transaction log and a match id
-                    on it names a different match.
+                    Every figure above is measured on {network.name}, including
+                    convergence and the transaction behind each verdict. The two
+                    matches read closely are pinned to {NETWORKS.bradbury.name} by
+                    id and are not shown here, because a match id on another
+                    deployment names a different match.
                   </li>
                 ) : null}
               </ul>
@@ -847,22 +844,11 @@ export default function LabPage({ nav }: { nav: NavShell }) {
                     GenLayer Studio Next. One page, one name for the chain. */}
                 Contract <code>{CARNAGE_ADDRESS}</code> on {network.name}. Every match
                 figure here is read from get_match on each visit.{" "}
-                {capabilities.hasTxLog ? (
-                  <>
-                    The transaction behind each verdict comes from a committed index
-                    plus a live scan of the blocks after it, described under{" "}
-                    <a className="lab-inline-link" href="#sources">
-                      two sources, both on-chain
-                    </a>
-                    .{" "}
-                  </>
-                ) : (
-                  <>
-                    This network exposes no transaction log, so no verdict here carries
-                    a transaction link.{" "}
-                  </>
-                )}
-                No figure on this page is hand-entered.
+                {footerSourceNote(capabilities.txIndexSource)}{" "}
+                <a className="lab-inline-link" href="#sources">
+                  two sources, both on-chain
+                </a>
+                . No figure on this page is hand-entered.
               </p>
             </footer>
           </>

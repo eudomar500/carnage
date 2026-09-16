@@ -59,9 +59,9 @@ describe("network registry", () => {
     }
   });
 
-  it("records Bradbury as the only network with a log, an index and withdrawals", () => {
+  it("records what each network can actually do, measured against the node", () => {
     expect(NETWORKS.bradbury.capabilities).toEqual({
-      hasTxLog: true,
+      txIndexSource: "log",
       hasIndex: true,
       withdrawals: true,
       readRevertBytes: "return-data",
@@ -70,14 +70,27 @@ describe("network registry", () => {
       feesOnWrite: false,
     });
     expect(NETWORKS["studio-next"].capabilities).toEqual({
-      hasTxLog: false,
-      hasIndex: false,
+      txIndexSource: "rpc-index",
+      hasIndex: true,
       withdrawals: false,
       readRevertBytes: "receipt",
       readsPerMinute: 30,
       simulateCarriesValue: true,
       feesOnWrite: true,
     });
+  });
+
+  it("gives every network a source for transaction hashes", () => {
+    // The gate that decides whether a verdict can carry a proof link. It was a
+    // boolean that asked whether eth_getLogs worked, which is a question about
+    // one transport and not about the network: Studio Next answered no to it
+    // and still lists every transaction ever sent to a contract. Nothing in the
+    // app may go back to reading it as "can this chain be verified".
+    for (const id of NETWORK_IDS) {
+      expect(["log", "rpc-index", "committed"]).toContain(
+        networkById(id).capabilities.txIndexSource,
+      );
+    }
   });
 
   it("records where a failed read puts the contract's revert bytes", () => {

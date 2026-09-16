@@ -97,6 +97,18 @@ export default function ClaimTable({
   );
 }
 
+/**
+ * Where a transaction sits, in the terms its own network has.
+ *
+ * Bradbury's source reports a block and no time; Studio Next's reports a time
+ * and no block. Neither is dressed up as the other.
+ */
+function whenClause(tx: Attempt): string {
+  if (tx.block !== null) return `in block ${tx.block}`;
+  if (tx.at) return `on ${tx.at.replace("T", " ").replace("Z", " UTC")}`;
+  return "at an unrecorded point in the record";
+}
+
 /** The transaction that wrote this match's labels, or an honest note instead. */
 function Proof({ matchId, lookup }: { matchId: bigint; lookup: VerdictLookup }) {
   const tx = lookup.verdicts.get(String(matchId));
@@ -114,7 +126,10 @@ function Proof({ matchId, lookup }: { matchId: bigint; lookup: VerdictLookup }) 
   return (
     <p className="lab-proof">
       <span className="lab-proof-tag">ON-CHAIN PROOF</span>{" "}
-      written by adjudicate in block {tx.block}, status {tx.statusName}{" "}
+      {/* A block where the network numbers blocks, the recorded time where it
+          does not. Printing "block null" was the alternative, and printing a
+          block number a reader cannot look up was the older one. */}
+      written by adjudicate {whenClause(tx)}, status {tx.statusName}{" "}
       <code className="lab-proof-hash">tx {tx.txId}</code>
       {url ? (
         <a className="inflight-link" href={url} target="_blank" rel="noreferrer">
